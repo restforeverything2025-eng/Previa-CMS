@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+<meta charset="UTF-8">
+
+<style>
+
+body{
+
+    font-family:Arial;
+
+    text-align:center;
+
+    padding:40px;
+
+}
+
+button{
+
+    width:100%;
+
+    max-width:360px;
+
+    height:78px;
+
+    font-size:26px;
+
+    border:none;
+
+    border-radius:18px;
+
+    background:#b98d44;
+
+    color:white;
+
+    cursor:pointer;
+
+    transition:0.25s;
+
+}
+
+#status{
+
+    margin-top:20px;
+
+    font-size:18px;
+
+    color:#666;
+
+    min-height:24px;
+
+}
+
+button:active{
+
+    transform:scale(0.97);
+
+}
+
+button:disabled{
+
+    background:#777;
+
+    cursor:default;
+
+}
+
+</style>
+
+</head>
+
+<body>
+
+<h2>PREVIA Publisher</h2>
+
+<button id="publishBtn" onclick="publishBoutique()">
+
+🚀 Publish Boutique
+
+</button>
+
+<div id="status">Waiting for changes.</div>
+
+<script>
+
+function publishBoutique(){
+
+    const btn =
+        document.getElementById(
+            "publishBtn"
+        );
+
+    const status =
+        document.getElementById(
+            "status"
+        );
+
+    btn.disabled = true;
+
+    btn.innerHTML =
+        "⏳ Publishing...";
+
+    status.innerHTML =
+        "Publishing... Please wait.";
+
+    google.script.run
+
+    .withSuccessHandler(function(message){
+
+        btn.innerHTML =
+            "✅ Published";
+
+        status.innerHTML = message;
+
+        setTimeout(function(){
+
+            btn.disabled = false;
+
+            btn.innerHTML =
+                "🚀 Publish Boutique";
+
+            status.innerHTML =
+                "Ready";
+
+        },10000);
+
+    })
+
+    .withFailureHandler(function(error){
+
+    btn.disabled = false;
+
+    btn.innerHTML =
+        "🚀 Publish Boutique";
+
+    status.innerHTML =
+        "❌ " + error.message;
+
+})
+
+    .publishFromWeb();
+
+}
+
+</script>
+
+</body>
+
+</html>

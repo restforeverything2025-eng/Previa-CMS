@@ -1,0 +1,9 @@
+# Local clasp credentials
+.clasprc.json
+
+# System files
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
