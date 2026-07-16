@@ -5,6 +5,11 @@ function onOpen() {
     .createMenu("PREVIA CMS")
 
     .addItem(
+      "Dashboard",
+      "showDashboard"
+    )
+
+    .addItem(
       "🚀 Publish Boutique",
       "publishBoutique"
     )
@@ -55,6 +60,25 @@ function importProducts(products){
   });
 
   return imported;
+
+}
+
+function showDashboard() {
+
+  const html =
+    HtmlService
+      .createHtmlOutputFromFile(
+        "Dashboard"
+      )
+      .setWidth(420)
+      .setHeight(520);
+
+  SpreadsheetApp
+    .getUi()
+    .showModalDialog(
+      html,
+      "PREVIA CMS Dashboard"
+    );
 
 }
 

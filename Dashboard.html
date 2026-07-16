@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+
+  <base target="_top">
+
+  <style>
+
+    body{
+
+      font-family: Arial, sans-serif;
+
+      padding:24px;
+
+      background:#f5f5f5;
+
+    }
+
+    h1{
+
+      margin-top:0;
+
+    }
+
+    .card{
+
+      background:white;
+
+      border-radius:10px;
+
+      padding:16px;
+
+      margin-bottom:14px;
+
+      box-shadow:0 2px 6px rgba(0,0,0,.12);
+
+    }
+
+    .label{
+
+      color:#666;
+
+      font-size:13px;
+
+    }
+
+    .value{
+
+      font-size:22px;
+
+      font-weight:bold;
+
+      margin-top:4px;
+
+    }
+
+  </style>
+
+</head>
+
+<body>
+
+  <h1>PREVIA CMS</h1>
+
+  <div id="dashboard">
+
+    Loading...
+
+  </div>
+
+  <script>
+
+    google.script.run
+
+      .withSuccessHandler(render)
+
+      .getDashboardData();
+
+    function render(data){
+
+      document.getElementById("dashboard").innerHTML =
+
+`
+
+<div class="card">
+
+<div class="label">Products</div>
+
+<div class="value">${data.products}</div>
+
+</div>
+
+<div class="card">
+
+<div class="label">New Products</div>
+
+<div class="value">${data.newProducts}</div>
+
+</div>
+
+<div class="card">
+
+<div class="label">Last Publish</div>
+
+<div class="value">${data.result}</div>
+
+</div>
+
+<div class="card">
+
+<div class="label">Last Publish Time</div>
+
+<div class="value">${data.date}</div>
+
+</div>
+
+`;
+
+    }
+
+  </script>
+
+</body>
+
+</html>
