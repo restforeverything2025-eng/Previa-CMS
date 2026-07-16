@@ -1,3 +1,12 @@
+/**
+ * ==========================================
+ * PREVIA Products Service
+ * ------------------------------------------
+ * Reads and writes products
+ * in Google Sheets.
+ * ==========================================
+ */
+
 function getProducts() {
 
   const sheet =
@@ -170,5 +179,14 @@ function testClearProducts(){
   clearProducts();
 
   Logger.log("Products cleared.");
+
+}
+
+function testGetProducts(){
+
+  const products =
+    getProducts();
+
+  Logger.log(products);
 
 }

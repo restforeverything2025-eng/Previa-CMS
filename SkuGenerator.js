@@ -1,58 +1,10 @@
-function generateSku(category, products) {
-
-  let prefix = "";
-
-  if (category === "Годинники") {
-
-    prefix = "W";
-
-  }
-
-  if (category === "Прикраси") {
-
-    prefix = "J";
-
-  }
-
-  let max = 0;
-
-  products.forEach(product => {
-
-    if (!product.sku) {
-
-      return;
-
-    }
-
-    if (!product.sku.startsWith(prefix)) {
-
-      return;
-
-    }
-
-    const number =
-      parseInt(
-        product.sku.substring(1),
-        10
-      );
-
-    if (number > max) {
-
-      max = number;
-
-    }
-
-  });
-
-  return (
-    prefix +
-    Utilities.formatString(
-      "%04d",
-      max + 1
-    )
-  );
-
-}
+/**
+ * ==========================================
+ * PREVIA SKU Generator
+ * ------------------------------------------
+ * Generates sequential product SKUs.
+ * ==========================================
+ */
 
 function assignSku(products) {
 
@@ -154,7 +106,7 @@ function getSkuCounters(products) {
 
 }
 
-function testAutoIds() {
+function testIdAndSkuGeneration() {
 
   const products = getProducts();
 

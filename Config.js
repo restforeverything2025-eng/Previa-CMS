@@ -1,3 +1,12 @@
+/**
+ * ==========================================
+ * PREVIA Configuration Service
+ * ------------------------------------------
+ * Reads project configuration from
+ * Google Sheets.
+ * ==========================================
+ */
+
 function getConfig() {
 
   const sheet =
@@ -28,9 +37,5 @@ function testConfig() {
   const config = getConfig();
 
   Logger.log(config);
-
-  const products = getProducts();
-
-  Logger.log(products);
 
 }

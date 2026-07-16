@@ -1,3 +1,11 @@
+/**
+ * ==========================================
+ * PREVIA ID Generator
+ * ------------------------------------------
+ * Generates sequential product IDs.
+ * ==========================================
+ */
+
 function assignId(products) {
 
   let max = 0;

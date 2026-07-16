@@ -151,6 +151,8 @@ function throwValidation(
 
 /**
  * ==========================================
+ * PREVIA Image Validation
+ * ------------------------------------------
  * Validates Google Drive images.
  * ==========================================
  */
