@@ -3,6 +3,9 @@ function publishBoutique() {
   const products =
     getProducts();
 
+    const newProducts =
+    getNewProducts(products).length;
+
     PublishReport.reset();
 
     PublishReport.add("Количество товаров: " + products.length);
@@ -19,6 +22,14 @@ function publishBoutique() {
   PublishReport.show(
     "PREVIA CMS\n\nОтчёт публикации"
   );
+
+  PublicationJournal.success(
+
+  products.length,
+
+  newProducts
+
+);
 
   return;
 
@@ -70,15 +81,33 @@ function publishBoutique() {
 
     PublishReport.show("PREVIA CMS\n\nОтчёт публикации");
 
+    PublicationJournal.success(
+
+    products.length,
+
+    newProducts
+
+);
+
     return;
 
   }
 
     catch (error) {
 
-    throw error;
+  PublicationJournal.failure(
 
-  }
+    products.length,
+
+    newProducts,
+
+    error
+
+  );
+
+  throw error;
+
+}
 
 }
 
