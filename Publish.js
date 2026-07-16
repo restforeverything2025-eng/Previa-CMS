@@ -62,7 +62,7 @@ function publishBoutique() {
 
     PublishReport.add("✓ Обновлена Google Sheets");
 
-    cleanupIncoming(products);
+    cleanupIncoming();
 
     PublishReport.add("✓ Очищена папка incoming");
 

@@ -91,6 +91,9 @@ function testPublishProductImage() {
 }
 
 function publishProductImages(sku) {
+
+  // Skip initial upload if the product folder
+// has already been published.
   
     const exists = getFileSha(
     "images/" + sku + "/1.jpg"
