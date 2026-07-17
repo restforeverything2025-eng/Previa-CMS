@@ -318,3 +318,11 @@ maintainable,
 and reliable years after its creation.
 
 Every new feature should move the project closer to that goal.
+
+Build Services First.
+Build UI Second.
+
+The interface should display information
+provided by services.
+
+The UI must not contain business logic.
