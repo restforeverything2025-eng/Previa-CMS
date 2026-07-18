@@ -1,4 +1,4 @@
-function publishBoutique() {
+function publishBoutique(showReport = true) {
 
   const products =
     getProducts();
@@ -20,8 +20,9 @@ function publishBoutique() {
   PublishReport.add("✓ Публикация завершена");
 
   PublishReport.show(
-    "PREVIA CMS\n\nОтчёт публикации"
-  );
+  "PREVIA CMS\n\nОтчёт публикации",
+  showReport
+);
 
   PublicationJournal.success(
 
@@ -31,7 +32,9 @@ function publishBoutique() {
 
 );
 
-  return;
+  return PublishReport.build(
+  "PREVIA CMS\n\nОтчёт публикации"
+);
 
 }
 
@@ -79,7 +82,10 @@ function publishBoutique() {
 
     PublishReport.add("✓ Публикация завершена");
 
-    PublishReport.show("PREVIA CMS\n\nОтчёт публикации");
+    PublishReport.show(
+  "PREVIA CMS\n\nОтчёт публикации",
+  showReport
+);
 
     PublicationJournal.success(
 
@@ -89,7 +95,9 @@ function publishBoutique() {
 
 );
 
-    return;
+    return PublishReport.build(
+  "PREVIA CMS\n\nОтчёт публикации"
+);
 
   }
 

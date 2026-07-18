@@ -75,6 +75,14 @@ button:disabled{
 
 <h2>PREVIA Publisher</h2>
 
+<button id="refreshBtn" onclick="refreshImages()">
+
+🖼️ Refresh Images
+
+</button>
+
+<br><br>
+
 <button id="publishBtn" onclick="publishBoutique()">
 
 🚀 Publish Boutique
@@ -112,7 +120,7 @@ function publishBoutique(){
         btn.innerHTML =
             "✅ Published";
 
-        status.innerHTML = message;
+        status.innerHTML = message.replace(/\n/g, "<br>");
 
         setTimeout(function(){
 
@@ -141,6 +149,66 @@ function publishBoutique(){
 })
 
     .publishFromWeb();
+
+}
+
+function refreshImages(){
+
+    const btn =
+        document.getElementById(
+            "refreshBtn"
+        );
+
+    const status =
+        document.getElementById(
+            "status"
+        );
+
+    btn.disabled = true;
+
+    btn.innerHTML =
+        "⏳ Refreshing...";
+
+    status.innerHTML =
+        "Refreshing images... Please wait.";
+
+    google.script.run
+
+    .withSuccessHandler(function(message){
+
+        btn.innerHTML =
+            "✅ Images Updated";
+
+        status.innerHTML =
+            message;
+
+        setTimeout(function(){
+
+            btn.disabled = false;
+
+            btn.innerHTML =
+                "🖼️ Refresh Images";
+
+            status.innerHTML =
+                "Ready";
+
+        },10000);
+
+    })
+
+    .withFailureHandler(function(error){
+
+        btn.disabled = false;
+
+        btn.innerHTML =
+            "🖼️ Refresh Images";
+
+        status.innerHTML =
+            "❌ " + error.message;
+
+    })
+
+    .refreshImagesFromWeb();
 
 }
 

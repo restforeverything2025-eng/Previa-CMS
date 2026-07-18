@@ -12,8 +12,18 @@ function doGet() {
 
 function publishFromWeb() {
 
-Logger.log("publishFromWeb started");
+  Logger.log("publishFromWeb started");
 
-  return publishBoutique();
+  return publishBoutique(false);
+
+}
+
+function refreshImagesFromWeb() {
+
+  Logger.log("refreshImagesFromWeb started");
+
+  refreshMedia();
+
+  return "Images synchronized successfully.";
 
 }

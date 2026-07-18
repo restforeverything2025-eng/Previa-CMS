@@ -36,15 +36,19 @@ const PublishReport = (() => {
 
 }
 
-function show(title) {
+function show(title, useUi = true) {
 
-  SpreadsheetApp
-    .getUi()
-    .alert(
+  const report = build(title);
 
-      build(title)
+  if (useUi) {
 
-    );
+    SpreadsheetApp
+      .getUi()
+      .alert(report);
+
+  }
+
+  return report;
 
 }
 
