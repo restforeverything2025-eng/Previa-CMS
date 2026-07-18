@@ -51,6 +51,8 @@ button{
 
     min-height:24px;
 
+    white-space: pre-line;
+
 }
 
 button:active{
@@ -120,8 +122,8 @@ function publishBoutique(){
         btn.innerHTML =
             "✅ Published";
 
-        status.innerHTML = message.replace(/\n/g, "<br>");
-
+        status.textContent = message;
+        
         setTimeout(function(){
 
             btn.disabled = false;

@@ -8,28 +8,13 @@
 
 function getDashboardData() {
 
-  const products =
-    getProducts();
-
-  const newProducts =
-    getNewProducts(products);
-
-  const journal =
-    getLastPublication();
-
   return {
 
-    products:
-      products.length,
+    ...getProductStats(),
 
-    newProducts:
-      newProducts.length,
+    ...getMediaStats(),
 
-    result:
-      journal.result,
-
-    date:
-      journal.date
+    ...getPublicationStats()
 
   };
 
@@ -96,6 +81,70 @@ function getLastPublication() {
 
     result:
       row[3]
+
+  };
+
+}
+
+function getProductStats() {
+
+  const products =
+    getProducts();
+
+  const newProducts =
+    getNewProducts(products);
+
+  return {
+
+    products:
+      products.length,
+
+    newProducts:
+      newProducts.length
+
+  };
+
+}
+
+function getMediaStats() {
+
+  const manifest =
+  getPublishedMediaManifest();
+  
+  return {
+
+    folders:
+      Object.keys(manifest).length,
+
+    images:
+      Object
+        .values(manifest)
+        .reduce(
+
+          (count, files) =>
+
+            count + files.length,
+
+          0
+
+        )
+
+  };
+
+}
+
+function getPublicationStats() {
+
+  const journal =
+    getLastPublication();
+
+  return {
+
+    result:
+      journal.result,
+
+    date:
+      journal.date
 
   };
 
