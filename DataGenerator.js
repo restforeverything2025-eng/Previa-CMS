@@ -6,26 +6,38 @@
  * ==========================================
  */
 
-function generateDataJS(products) {
+function generateDataJS(products, manifest) {
 
   const publicProducts =
-    buildPublicProducts(products);
+    buildPublicProducts(
+      products,
+      manifest
+    );
 
   return buildDataFile(publicProducts);
 
 }
 
-function buildPublicProducts(products) {
+function buildPublicProducts(
+  products,
+  manifest
+) {
 
   return products.map(product =>
 
-    buildPublicProduct(product)
+    buildPublicProduct(
+      product,
+      manifest
+    )
 
   );
 
 }
 
-function buildPublicProduct(product) {
+function buildPublicProduct(
+  product,
+  manifest
+) {
 
   return {
 
@@ -40,16 +52,32 @@ function buildPublicProduct(product) {
     dateAdded: formatDate(product.dateAdded),
     description: product.description,
 
-    images: buildImagePaths(product.sku)
+    images: buildImagePaths(
+    product.sku,
+    manifest
+)
 
   };
 
 }
 
-function buildImagePaths(sku) {
+function getManifestImages(manifest, sku) {
 
-  const images =
-    getProductImages(sku);
+  if (!manifest || !manifest[sku]) {
+    return [];
+  }
+
+  return manifest[sku]
+    .map(file => file.name)
+    .sort();
+
+}
+
+function buildImagePaths(sku, manifest) {
+
+  const images = manifest
+    ? getManifestImages(manifest, sku)
+    : getProductImages(sku);
 
   return images.map(fileName =>
 

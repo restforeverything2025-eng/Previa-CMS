@@ -298,7 +298,14 @@ function testGetFileSha() {
 
 function publishDataJS(products) {
 
-  const file = generateDataJS(products);
+  const manifest =
+    getMediaManifest();
+
+  const file =
+    generateDataJS(
+      products,
+      manifest
+    );
 
   publishFile(file);
 
