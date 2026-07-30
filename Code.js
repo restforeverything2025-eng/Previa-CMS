@@ -189,3 +189,13 @@ function testReimportProducts(){
   );
 
 }
+
+function testArchiveProduct() {
+
+  archiveProduct({
+
+    sku: "W0014"
+
+  });
+
+}
