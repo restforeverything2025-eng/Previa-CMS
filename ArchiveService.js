@@ -7,7 +7,29 @@
  * ==========================================
  */
 
-function archiveProduct(product) {
+/**
+ * Archives a product.
+ */
+
+function archiveProduct(sku) {
+
+  try {
+
+    moveProductFolder(sku);
+
+    moveProductRow(sku);
+
+  } catch (error) {
+
+    throw new Error(
+      "Archive failed: " + error.message
+    );
+
+  }
+
+}
+
+function moveProductRow(sku) {
 
   const spreadsheet =
     SpreadsheetApp.getActiveSpreadsheet();
@@ -30,7 +52,7 @@ function archiveProduct(product) {
 
   for (let i = 1; i < data.length; i++) {
 
-    if (data[i][1] === product.sku) {
+    if (data[i][1] === sku) {
 
       archiveSheet.appendRow(data[i]);
 
@@ -43,12 +65,8 @@ function archiveProduct(product) {
   }
 
   throw new Error(
-
-    "Product not found: " +
-
-    product.sku
-
-  );
+  "Product not found: " + sku
+);
 
 }
 
@@ -82,63 +100,5 @@ function moveProductFolder(sku) {
   archiveFolder.addFolder(folder);
 
   productsFolder.removeFolder(folder);
-
-}
-
-/**
- * TEMP
- * Tests moving a product folder
- * from Products to Archive.
- */
-function testMoveProductFolder() {
-
-  moveProductFolder("W0014");
-
-}
-
-/**
- * TEMP
- * Returns a product folder
- * from Archive to Products.
- */
-function restoreProductFolder(sku) {
-
-  const config = getConfig();
-
-  const productsFolder =
-    DriveApp.getFolderById(
-      config.products_folder_id
-    );
-
-  const archiveFolder =
-    DriveApp.getFolderById(
-      config.archive_folder_id
-    );
-
-  const folders =
-    archiveFolder.getFoldersByName(sku);
-
-  if (!folders.hasNext()) {
-
-    throw new Error(
-      "Archived folder not found: " + sku
-    );
-
-  }
-
-  const folder = folders.next();
-
-  productsFolder.addFolder(folder);
-
-  archiveFolder.removeFolder(folder);
-
-}
-
-/**
- * TEMP
- */
-function testRestoreProductFolder() {
-
-  restoreProductFolder("W0014");
 
 }
