@@ -183,9 +183,6 @@ function getProductFiles(sku) {
   const folders =
     rootFolder.getFoldersByName(sku);
 
-    Logger.log("SKU = [" + sku + "]");
-    Logger.log("Type = " + typeof sku);
-
   if (!folders.hasNext()) {
 
     throw new Error(
@@ -296,32 +293,5 @@ function testGetProductImages() {
     getProductImages("J0001");
 
   Logger.log(images);
-
-}
-
-/**
- * Returns product folder by SKU.
- */
-function getProductFolder(sku) {
-
-  const config = getConfig();
-
-  const productsFolder =
-    DriveApp.getFolderById(
-      config.PRODUCTS_FOLDER_ID
-    );
-
-  const folders =
-    productsFolder.getFoldersByName(sku);
-
-  if (!folders.hasNext()) {
-
-    throw new Error(
-      "Product folder not found: " + sku
-    );
-
-  }
-
-  return folders.next();
 
 }
