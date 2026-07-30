@@ -262,3 +262,27 @@ Simple systems survive.
 Complex systems eventually require rewriting.
 
 PREVIA always prefers simplicity.
+
+## Dashboard Architecture
+
+Dashboard follows the same architectural principles as the rest of PREVIA.
+
+Responsibilities:
+
+- Display system statistics.
+- Display publication status.
+- Never perform business logic.
+- Never modify project data.
+- Read-only presentation layer.
+
+Data source:
+
+DashboardService
+
+Rendering:
+
+Dashboard.html
+
+Principle:
+
+Service → HTML → User

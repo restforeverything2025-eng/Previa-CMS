@@ -299,7 +299,7 @@ function testGetFileSha() {
 function publishDataJS(products) {
 
   const manifest =
-    getMediaManifest();
+  getMediaManifest(products);
 
   const file =
     generateDataJS(

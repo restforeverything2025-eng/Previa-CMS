@@ -49,35 +49,6 @@ function getProducts() {
 
 }
 
-function normalizeProduct(product){
-
-  const normalized = { ...product };
-
-  normalized.category = product.category;
-
-  if(product.price){
-
-    const match =
-      product.price.match(/^([\d\s]+)\s*(EUR|UAH|USD|€)$/);
-
-    if(match){
-
-      normalized.price =
-        Number(match[1].replace(/\s/g,""));
-
-      normalized.currency =
-        match[2] === "€"
-          ? "EUR"
-          : match[2];
-
-    }
-
-  }
-
-  return normalized;
-
-}
-
 function saveProduct(product){
 
   const sheet =

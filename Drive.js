@@ -173,6 +173,9 @@ function getProductFiles(sku) {
   const folders =
     rootFolder.getFoldersByName(sku);
 
+    Logger.log("SKU = [" + sku + "]");
+    Logger.log("Type = " + typeof sku);
+
   if (!folders.hasNext()) {
 
     throw new Error(

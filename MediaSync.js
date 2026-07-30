@@ -7,11 +7,12 @@
  * ==========================================
  */
 
-function getMediaManifest() {
+function getMediaManifest(products) {
 
-  const products =
-    getProducts();
-
+  if (!products) {
+    products = getProducts();
+  }
+  
   const manifest = {};
 
   products.forEach(product => {

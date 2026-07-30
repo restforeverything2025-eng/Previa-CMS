@@ -326,3 +326,13 @@ The interface should display information
 provided by services.
 
 The UI must not contain business logic.
+
+## Dashboard Philosophy
+
+Dashboard is not a workspace.
+
+Dashboard is an overview.
+
+Actions belong to dedicated modules.
+
+Dashboard may provide shortcuts to actions but should never become overloaded with controls.
