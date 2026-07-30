@@ -527,9 +527,26 @@ Returns SHA hash of a published file.
 
 Downloads and returns file contents.
 
-### publishFile()
+### publishFile(file, message)
 
-Publishes or updates a file in GitHub.
+Publishes or updates a file in the GitHub repository.
+Creates a separate Git commit using the provided commit message.
+
+**Parameters**
+
+| Name | Description |
+|------|-------------|
+| `file` | File object to publish. |
+| `message` | Commit message displayed in GitHub history. |
+
+**Example**
+
+```javascript
+publishFile(
+  file,
+  "Publish data.js"
+);
+```
 
 ### publishDataJS()
 

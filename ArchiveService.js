@@ -102,3 +102,12 @@ function moveProductFolder(sku) {
   productsFolder.removeFolder(folder);
 
 }
+
+/**
+ * Tests archiving a product.
+ */
+function testArchiveProduct() {
+
+  archiveProduct("W0014");
+
+}

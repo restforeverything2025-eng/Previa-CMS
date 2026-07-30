@@ -17,6 +17,16 @@ function getProductsFolder() {
 
 }
 
+function getArchiveFolder() {
+
+  const config = getConfig();
+
+  return DriveApp.getFolderById(
+    config.archive_folder_id
+  );
+
+}
+
 function getIncomingFolder() {
 
   const config = getConfig();

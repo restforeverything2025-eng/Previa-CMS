@@ -64,16 +64,21 @@ function publishProductImage(sku, fileName) {
 
   publishFile({
 
-    fileName:
-      "images/" + sku + "/" + image.name,
+  fileName:
+    "images/" + sku + "/" + image.name,
 
-    bytes:
-      image.bytes,
+  bytes:
+    image.bytes,
 
-    binary:
-      true
+  binary:
+    true
 
-  });
+},
+"Publish image " +
+sku +
+"/" +
+image.name
+);
 
 }
 

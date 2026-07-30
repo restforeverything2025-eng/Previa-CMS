@@ -191,7 +191,7 @@ function testGetFileContent() {
 
 }
 
-function publishFile(file) {
+function publishFile(file, message) {
 
   const github = getGitHubConfig();
 
@@ -228,7 +228,7 @@ if (file.binary) {
   const body = {
 
     message:
-      "PREVIA CMS Publish",
+      message,
 
     content:
       encodedContent,
@@ -307,6 +307,9 @@ function publishDataJS(products) {
       manifest
     );
 
-  publishFile(file);
+  publishFile(
+  file,
+  "Publish data.js"
+);
 
 }

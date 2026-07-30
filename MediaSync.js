@@ -214,7 +214,10 @@ function publishMediaManifest() {
   const file =
     generateMediaManifest();
 
-  publishFile(file);
+  publishFile(
+  file,
+  "Publish media-manifest"
+);
 
 }
 
@@ -258,18 +261,23 @@ function syncMedia() {
 
     publishFile({
 
-      fileName:
-        "images/" +
-        operation.sku +
-        "/" +
-        driveFile.name,
+  fileName:
+    "images/" +
+    operation.sku +
+    "/" +
+    driveFile.name,
 
-      bytes:
-        driveFile.bytes,
+  bytes:
+    driveFile.bytes,
 
-      binary: true
+  binary: true
 
-    });
+},
+"Upload image " +
+operation.sku +
+"/" +
+driveFile.name
+);
 
     Logger.log(
 
