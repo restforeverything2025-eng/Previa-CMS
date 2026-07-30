@@ -5,9 +5,9 @@
 
   <base target="_top">
 
-  <style>
+<style>
 
-    body{
+   body{
 
       font-family: Arial, sans-serif;
 
@@ -17,13 +17,13 @@
 
     }
 
-    h1{
+   h1{
 
-      margin-top:0;
+  margin-top:0;
 
-    }
+}
 
-    .card{
+.card{
 
   background:#fff;
 
@@ -37,7 +37,7 @@
 
 }
 
-    .dashboard-grid{
+.dashboard-grid{
 
   display:grid;
 
@@ -53,15 +53,7 @@
 
 }
 
-.label{
-
-      color:#666;
-
-      font-size:13px;
-
-    }
-
-    .value{
+.value{
 
   font-size:26px;
 
@@ -99,7 +91,34 @@
 
 }
 
-  </style>
+.actions-container{
+
+  margin-top:12px;
+
+}
+
+.dashboard-button{
+
+  width:100%;
+  padding:10px;
+
+}
+
+.dashboard-button:not(:last-child){
+
+  margin-bottom:8px;
+
+}
+
+.publish-date{
+
+  margin-top:8px;
+  color:#666;
+  font-size:13px;
+
+}
+
+</style>
 
 </head>
 
@@ -121,25 +140,34 @@
 
   <script>
 
-    google.script.run
-
-      .withSuccessHandler(render)
-
-      .getDashboardData();
+google.script.run
+  .withSuccessHandler(render)
+  .getDashboardData();
 
 function render(data){
 
-  document.getElementById(
-    "dashboard"
-  ).innerHTML =
-
+  document.getElementById("dashboard").innerHTML =
     renderStatistics(data) +
-
     renderActions() +
-
     renderLastPublication(data);
 
-;}
+}
+
+function createStatCard(label, value){
+
+  return `
+
+<div class="card">
+
+<div class="label">${label}</div>
+
+<div class="value">${value}</div>
+
+</div>
+
+`;
+
+}
 
 function renderStatistics(data){
 
@@ -147,35 +175,13 @@ function renderStatistics(data){
 
 <div class="dashboard-grid">
 
-<div class="card">
+${createStatCard("Products", data.products)}
 
-<div class="label">Products</div>
+${createStatCard("New Products", data.newProducts)}
 
-<div class="value">${data.products}</div>
+${createStatCard("Folders", data.folders)}
 
-</div>
-
-<div class="card">
-
-<div class="label">New Products</div>
-
-<div class="value">${data.newProducts}</div>
-
-</div>
-
-<div class="card">
-
-<div class="label">Folders</div>
-
-<div class="value">${data.folders}</div>
-
-</div>
-
-<div class="card">
-
-<div class="label">Images</div>
-
-<div class="value">${data.images}</div>
+${createStatCard("Images", data.images)}
 
 </div>
 
@@ -195,30 +201,18 @@ Actions
 
 </div>
 
-<div style="margin-top:12px;">
+<div class="actions-container">
 
-<button
-disabled
-style="width:100%;padding:10px;margin-bottom:8px;">
-
+<button disabled class="dashboard-button">
 🚀 Publish Boutique
-
 </button>
 
-<button
-disabled
-style="width:100%;padding:10px;margin-bottom:8px;">
-
+<button disabled class="dashboard-button">
 🖼 Refresh Images
-
 </button>
 
-<button
-disabled
-style="width:100%;padding:10px;">
-
+<button disabled class="dashboard-button">
 📦 More actions coming soon
-
 </button>
 
 </div>
@@ -247,12 +241,9 @@ ${data.result}
 
 </div>
 
-<div
-style="margin-top:8px;color:#666;font-size:13px;">
+<div class="publish-date">
 
 ${data.date}
-
-</div>
 
 </div>
 
@@ -262,7 +253,7 @@ ${data.date}
 
 }
 
-  </script>
+</script>
 
 </body>
 
