@@ -53,7 +53,7 @@
 
 }
 
-    .label{
+.label{
 
       color:#666;
 
@@ -87,6 +87,18 @@
 
 }
 
+.subtitle{
+
+  color:#5f6368;
+
+  margin-top:-10px;
+
+  margin-bottom:22px;
+
+  font-size:14px;
+
+}
+
   </style>
 
 </head>
@@ -95,11 +107,17 @@
 
   <h1>PREVIA CMS</h1>
 
-  <div id="dashboard">
+<div class="subtitle">
 
-    Loading...
+  Vintage Boutique Workspace
 
-  </div>
+</div>
+
+<div id="dashboard">
+
+  Loading...
+
+</div>
 
   <script>
 
@@ -109,11 +127,24 @@
 
       .getDashboardData();
 
-    function render(data){
+function render(data){
 
-      document.getElementById("dashboard").innerHTML =
+  document.getElementById(
+    "dashboard"
+  ).innerHTML =
 
-`
+    renderStatistics(data) +
+
+    renderActions() +
+
+    renderLastPublication(data);
+
+;}
+
+function renderStatistics(data){
+
+  return `
+
 <div class="dashboard-grid">
 
 <div class="card">
@@ -148,17 +179,47 @@
 
 </div>
 
+`;
+
+}
+
+function renderActions(){
+
+  return `
+
 <div class="card full-width">
 
-  <div class="label">Last Publish</div>
+<div class="label">
 
-  <div class="value">${data.result}</div>
+Actions
 
-  <div style="margin-top:8px;color:#666;font-size:13px;">
+</div>
 
-    ${data.date}
+<div style="margin-top:12px;">
 
-  </div>
+<button
+disabled
+style="width:100%;padding:10px;margin-bottom:8px;">
+
+🚀 Publish Boutique
+
+</button>
+
+<button
+disabled
+style="width:100%;padding:10px;margin-bottom:8px;">
+
+🖼 Refresh Images
+
+</button>
+
+<button
+disabled
+style="width:100%;padding:10px;">
+
+📦 More actions coming soon
+
+</button>
 
 </div>
 
@@ -166,7 +227,40 @@
 
 `;
 
-    }
+}
+
+function renderLastPublication(data){
+
+  return `
+
+<div class="card full-width">
+
+<div class="label">
+
+Last Publish
+
+</div>
+
+<div class="value">
+
+${data.result}
+
+</div>
+
+<div
+style="margin-top:8px;color:#666;font-size:13px;">
+
+${data.date}
+
+</div>
+
+</div>
+
+</div>
+
+`;
+
+}
 
   </script>
 

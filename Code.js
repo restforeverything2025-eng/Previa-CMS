@@ -65,13 +65,21 @@ function importProducts(products){
 
 function showDashboard() {
 
+  const DASHBOARD_WIDTH = 650;
+
+  const DASHBOARD_HEIGHT = 760;
+
   const html =
     HtmlService
       .createHtmlOutputFromFile(
         "Dashboard"
       )
-      .setWidth(420)
-      .setHeight(520);
+      .setWidth(
+        DASHBOARD_WIDTH
+      )
+      .setHeight(
+        DASHBOARD_HEIGHT
+      );
 
   SpreadsheetApp
     .getUi()
