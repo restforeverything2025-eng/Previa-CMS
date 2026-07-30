@@ -8,13 +8,34 @@
 
 function getDashboardData() {
 
+  const productStats =
+  getProductStats();
+
+const mediaStats =
+  getMediaStats();
+
+const publicationStats =
+  getPublicationStats();
+
+return {
+
+  ...productStats,
+
+  ...mediaStats,
+
+  ...publicationStats
+
+};
+
+}
+
+function getEmptyPublication(){
+
   return {
 
-    ...getProductStats(),
+    result: "-",
 
-    ...getMediaStats(),
-
-    ...getPublicationStats()
+    date: "-"
 
   };
 
@@ -31,13 +52,7 @@ function getLastPublication() {
 
   if (!sheet) {
 
-    return {
-
-      result: "-",
-
-      date: "-"
-
-    };
+    return getEmptyPublication();
 
   }
 
@@ -46,13 +61,7 @@ function getLastPublication() {
 
   if (lastRow <= 1) {
 
-    return {
-
-      result: "-",
-
-      date: "-"
-
-    };
+    return getEmptyPublication();
 
   }
 

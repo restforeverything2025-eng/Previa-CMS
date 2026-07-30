@@ -118,6 +118,44 @@
 
 }
 
+.message-modal.hidden{
+
+  display:none;
+
+}
+
+.message-modal{
+
+  position: fixed;
+
+  inset: 0;
+
+  background: rgba(0,0,0,0.45);
+
+  display: flex;
+
+  justify-content: center;
+
+  align-items: center;
+
+}
+
+.message-box{
+
+  width: 520px;
+
+  max-width: 90%;
+
+  background: white;
+
+  border-radius: 12px;
+
+  box-shadow: 0 10px 30px rgba(0,0,0,.25);
+
+  padding: 24px;
+
+}
+
 </style>
 
 </head>
@@ -203,7 +241,9 @@ Actions
 
 <div class="actions-container">
 
-<button disabled class="dashboard-button">
+<button
+class="dashboard-button"
+onclick="handleAction('publish')">
 🚀 Publish Boutique
 </button>
 
@@ -253,7 +293,93 @@ ${data.date}
 
 }
 
+function handleAction(action){
+
+  switch(action){
+
+    case "publish":
+
+      publishBoutique();
+
+      break;
+
+    default:
+
+      console.warn("Unknown action:", action);
+
+  }
+
+}
+
+function publishBoutique(){
+
+  google.script.run
+
+    .withSuccessHandler(function(result){
+
+  showMessage(
+    "Publication Report",
+    result
+  );
+
+})
+
+    .withFailureHandler(function(error){
+
+  console.error(error);
+
+  showMessage(
+    "Publication Error",
+    error.message || String(error)
+  );
+
+})
+
+    .publishBoutique(false);
+
+}
+
+function showMessage(title, message) {
+
+  document.getElementById("message-title").textContent = title;
+  document.getElementById("message-content").textContent = message;
+
+  document
+    .getElementById("message-modal")
+    .classList.remove("hidden");
+
+}
+
+function hideMessage() {
+
+  document
+    .getElementById("message-modal")
+    .classList.add("hidden");
+
+}
+
 </script>
+
+<div id="message-modal" class="message-modal hidden">
+
+  <div class="message-box">
+
+    <div id="message-title" class="message-title">
+      Message
+    </div>
+
+    <pre id="message-content" class="message-content"></pre>
+
+    <button
+  id="message-close"
+  class="dashboard-button"
+  onclick="hideMessage()">
+  OK
+    </button>
+
+  </div>
+
+</div>
 
 </body>
 
