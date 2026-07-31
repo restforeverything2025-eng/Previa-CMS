@@ -118,13 +118,13 @@
 
 }
 
-.message-modal.hidden{
+.report-modal.hidden{
 
   display:none;
 
 }
 
-.message-modal{
+.report-modal{
 
   position: fixed;
 
@@ -140,7 +140,7 @@
 
 }
 
-.message-box{
+.report-box{
 
   width: 520px;
 
@@ -317,7 +317,7 @@ function publishBoutique(){
 
     .withSuccessHandler(function(result){
 
-  showMessage(
+  showReport(
     "Publication Report",
     result
   );
@@ -328,7 +328,7 @@ function publishBoutique(){
 
   console.error(error);
 
-  showMessage(
+  showReport(
     "Publication Error",
     error.message || String(error)
   );
@@ -339,41 +339,41 @@ function publishBoutique(){
 
 }
 
-function showMessage(title, message) {
+function showReport(title, message) {
 
-  document.getElementById("message-title").textContent = title;
-  document.getElementById("message-content").textContent = message;
+  document.getElementById("report-title").textContent = title;
+  document.getElementById("report-content").textContent = message;
 
   document
-    .getElementById("message-modal")
+    .getElementById("report-modal")
     .classList.remove("hidden");
 
 }
 
-function hideMessage() {
+function hideReport() {
 
   document
-    .getElementById("message-modal")
+    .getElementById("report-modal")
     .classList.add("hidden");
 
 }
 
 </script>
 
-<div id="message-modal" class="message-modal hidden">
+<div id="report-modal" class="report-modal hidden">
 
-  <div class="message-box">
+  <div class="report-box">
 
-    <div id="message-title" class="message-title">
+    <div id="report-title" class="report-title">
       Message
     </div>
 
-    <pre id="message-content" class="message-content"></pre>
+    <pre id="report-content" class="report-content"></pre>
 
     <button
-  id="message-close"
+  id="report-close"
   class="dashboard-button"
-  onclick="hideMessage()">
+  onclick="hideReport()">
   OK
     </button>
 
