@@ -156,6 +156,54 @@
 
 }
 
+.input-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.input-modal.hidden {
+  display: none;
+}
+
+.input-box {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  width: 360px;
+  max-width: 90%;
+  box-shadow: 0 8px 24px rgba(0,0,0,.2);
+}
+
+.input-box h2 {
+  margin-top: 0;
+  margin-bottom: 20px;
+}
+
+.input-box label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.input-box input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  font-size: 14px;
+  margin-bottom: 20px;
+}
+
+.input-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 </style>
 
 </head>
@@ -242,17 +290,19 @@ Actions
 <div class="actions-container">
 
 <button
-class="dashboard-button"
-onclick="handleAction('publish')">
-🚀 Publish Boutique
+  class="dashboard-button"
+  onclick="handleAction('publish')">
+  🚀 Publish Boutique
+</button>
+
+<button
+  class="dashboard-button"
+  onclick="handleAction('archive')">
+  📦 Archive
 </button>
 
 <button disabled class="dashboard-button">
 🖼 Refresh Images
-</button>
-
-<button disabled class="dashboard-button">
-📦 More actions coming soon
 </button>
 
 </div>
@@ -303,11 +353,23 @@ function handleAction(action){
 
       break;
 
+    case "archive":
+
+      archiveProductPrompt();
+
+      break;
+
     default:
 
       console.warn("Unknown action:", action);
 
   }
+
+}
+
+function archiveProductPrompt() {
+
+  showInputDialog();
 
 }
 
@@ -358,6 +420,22 @@ function hideReport() {
 
 }
 
+function showInputDialog() {
+
+  document
+    .getElementById("input-modal")
+    .classList.remove("hidden");
+
+}
+
+function hideInputDialog() {
+
+  document
+    .getElementById("input-modal")
+    .classList.add("hidden");
+
+}
+
 </script>
 
 <div id="report-modal" class="report-modal hidden">
@@ -376,6 +454,43 @@ function hideReport() {
   onclick="hideReport()">
   OK
     </button>
+
+  </div>
+
+</div>
+
+<div
+  id="input-modal"
+  class="input-modal hidden">
+
+  <div class="input-box">
+
+    <h2 id="input-title">
+      Input
+    </h2>
+
+    <label for="input-field">
+      SKU
+    </label>
+
+    <input
+      id="input-field"
+      type="text">
+
+    <div class="input-buttons">
+
+      <button
+        id="input-cancel"
+        onclick="hideInputDialog()">
+        Cancel
+      </button>
+
+      <button
+        id="input-confirm">
+        Continue
+      </button>
+
+    </div>
 
   </div>
 
