@@ -231,6 +231,7 @@ google.script.run
   .getDashboardData();
 
   let selectedProduct = null;
+  let currentAction = null;
   let returnToInputDialog = false;
 
 function render(data){
@@ -304,6 +305,12 @@ Actions
   📦 Archive
 </button>
 
+<button
+  class="dashboard-button"
+  onclick="handleAction('restore')">
+  ♻️ Restore
+</button>
+
 <button disabled class="dashboard-button">
 🖼 Refresh Images
 </button>
@@ -362,6 +369,12 @@ function handleAction(action){
 
       break;
 
+    case "restore":
+
+      restoreProductPrompt();
+
+      break;
+
     default:
 
       console.warn("Unknown action:", action);
@@ -372,10 +385,23 @@ function handleAction(action){
 
 function archiveProductPrompt() {
 
+  currentAction = "archive";
+
   showInputDialog(
-  "Archive Product",
-  "Enter SKU"
-);
+    "Archive Product",
+    "Enter SKU"
+  );
+
+}
+
+function restoreProductPrompt() {
+
+  currentAction = "restore";
+
+  showInputDialog(
+    "Restore Product",
+    "Enter SKU"
+  );
 
 }
 
@@ -462,6 +488,21 @@ function showProductPreviewDialog(title, content) {
     "product-preview-content"
   ).innerHTML = content;
 
+const confirmButton =
+  document.getElementById(
+    "product-preview-confirm"
+  );
+
+confirmButton.textContent =
+  currentAction === "restore"
+    ? "Restore"
+    : "Archive";
+
+confirmButton.onclick =
+  currentAction === "restore"
+    ? confirmRestore
+    : confirmArchive;
+
   document
     .getElementById("product-preview-modal")
     .classList.remove("hidden");
@@ -518,10 +559,15 @@ function showProductPreview(product) {
 
   const html = buildProductPreview(product);
 
-  showProductPreviewDialog(
-    "Archive Product",
-    html
-  );
+  const title =
+  currentAction === "restore"
+    ? "Restore Product"
+    : "Archive Product";
+
+showProductPreviewDialog(
+  title,
+  html
+);
 
 }
 
@@ -550,6 +596,27 @@ function confirmArchive() {
     })
 
     .archiveProduct(selectedProduct.sku);
+
+}
+
+function confirmRestore() {
+
+  hideProductPreviewDialog();
+
+  google.script.run
+
+    .withSuccessHandler(function(result){
+
+      showReport(
+        "Restore Report",
+        result
+      );
+
+    })
+
+    .withFailureHandler(showError)
+
+    .restoreProduct(selectedProduct.sku);
 
 }
 
@@ -584,7 +651,37 @@ function testInputDialog() {
 
   const sku = getInputValue();
 
-  loadProductBySku(sku);
+  switch (currentAction) {
+
+    case "archive":
+
+      loadProductBySku(sku);
+
+      break;
+
+    case "restore":
+
+      loadArchivedProductBySku(sku);
+
+      break;
+
+    default:
+
+      showReport(
+        "Error",
+        "Unknown action."
+      );
+
+  }
+
+}
+
+function loadArchivedProductBySku(sku) {
+
+  google.script.run
+    .withSuccessHandler(showProductPreview)
+    .withFailureHandler(showError)
+    .getArchivedProductBySku(sku);
 
 }
 

@@ -3,9 +3,32 @@
  */
 function restoreProduct(sku) {
 
-  moveProductFolderBack(sku);
+  try {
 
-  moveProductRowBack(sku);
+    moveProductFolderBack(sku);
+
+    moveProductRowBack(sku);
+
+    return `
+
+PREVIA CMS
+
+Product restored successfully.
+
+SKU: ${sku}
+
+✓ Google Sheets updated
+✓ Google Drive updated
+
+`;
+
+  } catch (error) {
+
+    throw new Error(
+      "Restore failed: " + error.message
+    );
+
+  }
 
 }
 
@@ -56,20 +79,12 @@ function moveProductRowBack(sku) {
 
   const headers = archiveData[0];
 
-  const skuColumn =
-    headers.indexOf("sku");
-
-  if (skuColumn === -1) {
-
-    throw new Error(
-      "SKU column not found."
-    );
-
-  }
+  const index =
+  getProductsColumnIndex(headers);
 
   for (let i = 1; i < archiveData.length; i++) {
 
-    if (archiveData[i][skuColumn] === sku) {
+    if (archiveData[i][index.sku] === sku) {
 
       productsSheet.appendRow(
         archiveData[i]

@@ -36,3 +36,12 @@ function getProductBySku(sku) {
   return findProductBySku(sku);
 
 }
+
+/**
+ * Returns an archived product by SKU.
+ */
+function getArchivedProductBySku(sku) {
+
+  return findArchivedProductBySku(sku);
+
+}

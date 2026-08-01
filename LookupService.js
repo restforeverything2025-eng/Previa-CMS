@@ -58,6 +58,57 @@ function findProductBySku(sku) {
 }
 
 /**
+ * Finds an archived product by SKU.
+ */
+function findArchivedProductBySku(sku) {
+
+  const spreadsheet =
+    SpreadsheetApp.getActiveSpreadsheet();
+
+  const archiveSheet =
+    spreadsheet.getSheetByName("Archive");
+
+  const data =
+    archiveSheet
+      .getDataRange()
+      .getValues();
+
+  const headers = data[0];
+
+  const index =
+    getProductsColumnIndex(headers);
+
+  for (let i = 1; i < data.length; i++) {
+
+    if (data[i][index.sku] === sku) {
+
+      return {
+
+        id: data[i][index.id],
+        sku: data[i][index.sku],
+        category: data[i][index.category],
+        brand: data[i][index.brand],
+        name: data[i][index.name],
+        currency: data[i][index.currency],
+        price: data[i][index.price],
+        status: data[i][index.status],
+        dateAdded: "",
+        sortOrder: data[i][index.sortOrder],
+        description: data[i][index.description],
+        notes: data[i][index.notes],
+        featuredHome: data[i][index.featuredHome]
+
+      };
+
+    }
+
+  }
+
+  return null;
+
+}
+
+/**
  * Returns Products sheet column indexes.
  */
 function getProductsColumnIndex(headers) {
