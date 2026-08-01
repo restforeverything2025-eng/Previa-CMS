@@ -230,6 +230,9 @@ google.script.run
   .withSuccessHandler(render)
   .getDashboardData();
 
+  let selectedProduct = null;
+  let returnToInputDialog = false;
+
 function render(data){
 
   document.getElementById("dashboard").innerHTML =
@@ -369,7 +372,10 @@ function handleAction(action){
 
 function archiveProductPrompt() {
 
-  showInputDialog();
+  showInputDialog(
+  "Archive Product",
+  "Enter SKU"
+);
 
 }
 
@@ -420,11 +426,21 @@ function hideReport() {
 
 }
 
-function showInputDialog() {
+function showInputDialog(title, label) {
+
+  document.getElementById("input-title").textContent = title;
+
+  document.querySelector('label[for="input-field"]').textContent = label;
+
+  const input = document.getElementById("input-field");
+
+  input.value = "";
 
   document
     .getElementById("input-modal")
     .classList.remove("hidden");
+
+  input.focus();
 
 }
 
@@ -433,6 +449,142 @@ function hideInputDialog() {
   document
     .getElementById("input-modal")
     .classList.add("hidden");
+
+}
+
+function showProductPreviewDialog(title, content) {
+
+  document.getElementById(
+    "product-preview-title"
+  ).textContent = title;
+
+  document.getElementById(
+    "product-preview-content"
+  ).innerHTML = content;
+
+  document
+    .getElementById("product-preview-modal")
+    .classList.remove("hidden");
+
+}
+
+function hideProductPreviewDialog() {
+
+  document
+    .getElementById("product-preview-modal")
+    .classList.add("hidden");
+
+}
+
+function getInputValue() {
+
+  return document
+    .getElementById("input-field")
+    .value
+    .trim()
+    .toUpperCase();
+
+}
+
+function loadProductBySku(sku) {
+
+  google.script.run
+    .withSuccessHandler(showProductPreview)
+    .withFailureHandler(showError)
+    .getProductBySku(sku);
+
+}
+
+function showProductPreview(product) {
+
+  if (!product) {
+
+  returnToInputDialog = true;
+
+  hideInputDialog();
+
+  showReport(
+    "Product Not Found",
+    "No product with this SKU was found."
+  );
+
+  return;
+
+}
+
+  selectedProduct = product;
+
+  hideInputDialog();
+
+  const html = buildProductPreview(product);
+
+  showProductPreviewDialog(
+    "Archive Product",
+    html
+  );
+
+}
+
+function confirmArchive() {
+
+  google.script.run
+
+    .withSuccessHandler(function(result) {
+
+      hideProductPreviewDialog();
+
+      showReport(
+        "Archive Report",
+        result
+      );
+
+    })
+
+    .withFailureHandler(function(error) {
+
+      showReport(
+        "Archive Error",
+        error.message || String(error)
+      );
+
+    })
+
+    .archiveProduct(selectedProduct.sku);
+
+}
+
+function buildProductPreview(product) {
+
+  return `
+
+<b>SKU:</b> ${product.sku}<br><br>
+
+<b>Brand:</b> ${product.brand}<br>
+
+<b>Name:</b> ${product.name}<br>
+
+<b>Price:</b> ${product.price} ${product.currency}<br>
+
+<b>Status:</b> ${product.status}
+
+`;
+
+}
+
+function showError(error) {
+
+  showReport(
+    "Server Error",
+    error.message || String(error)
+  );
+
+}
+
+function testInputDialog() {
+
+  const sku = getInputValue();
+
+  loadProductBySku(sku);
 
 }
 
@@ -486,11 +638,53 @@ function hideInputDialog() {
       </button>
 
       <button
-        id="input-confirm">
+        id="input-confirm"
+        onclick="testInputDialog()">
         Continue
       </button>
 
     </div>
+
+  </div>
+
+</div>
+
+<!-- Product Preview Dialog -->
+<div
+  id="product-preview-modal"
+  class="report-modal hidden">
+
+  <div class="report-box">
+
+    <div
+      id="product-preview-title"
+      class="report-title">
+
+      Product Preview
+
+    </div>
+
+    <div
+      id="product-preview-content"
+      class="report-content">
+
+    </div>
+
+    <button
+      id="product-preview-confirm"
+      class="dashboard-button"
+      onclick="confirmArchive()">
+      Archive
+    </button>
+
+    <button
+      id="product-preview-cancel"
+      class="dashboard-button"
+      onclick="hideProductPreviewDialog()">
+
+      Cancel
+
+    </button>
 
   </div>
 

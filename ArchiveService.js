@@ -19,6 +19,19 @@ function archiveProduct(sku) {
 
     moveProductRow(sku);
 
+    return `
+
+     PREVIA CMS
+
+     Product archived successfully.
+
+      SKU: ${sku}
+
+      ✓ Google Sheets updated
+      ✓ Google Drive updated
+
+` ;
+
   } catch (error) {
 
     throw new Error(

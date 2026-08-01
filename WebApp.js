@@ -27,3 +27,12 @@ function refreshImagesFromWeb() {
   return "Images synchronized successfully.";
 
 }
+
+/**
+ * Returns product information by SKU for Dashboard.
+ */
+function getProductBySku(sku) {
+
+  return findProductBySku(sku);
+
+}
