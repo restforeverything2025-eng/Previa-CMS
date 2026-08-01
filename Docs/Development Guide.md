@@ -336,3 +336,70 @@ Dashboard is an overview.
 Actions belong to dedicated modules.
 
 Dashboard may provide shortcuts to actions but should never become overloaded with controls.
+
+## 2026-08-01
+
+### ✅ Archive Module Completed
+
+Implemented complete archive workflow:
+
+- SKU lookup
+- Product Preview
+- Archive confirmation
+- Google Sheets row move
+- Google Drive folder move
+- Report dialog
+
+### ✅ Restore Module Completed
+
+Implemented complete restore workflow:
+
+- Archived SKU lookup
+- Product Preview
+- Restore confirmation
+- Google Sheets row restore
+- Google Drive folder restore
+- Report dialog
+
+## Dashboard Action Pattern
+
+Every dashboard action follows the same flow:
+
+Action
+→ Prompt
+→ Lookup
+→ Preview
+→ Confirm
+→ Service
+→ Report
+
+Current implementation:
+
+- Publish
+- Archive
+- Restore
+
+Future modules should follow the same pattern.
+
+## Development Rules
+
+One module = one responsibility.
+
+Reuse existing components whenever possible.
+
+Avoid duplicate dialogs and UI.
+
+Create a new component only when an existing one cannot be reused.
+
+## Definition of Done
+
+A module is considered complete only after:
+
+- Functional testing completed
+- Temporary console.log removed
+- Temporary Logger.log removed (except test functions)
+- Git status checked
+- Git diff reviewed
+- Commit created
+- Changes pushed to GitHub
+
