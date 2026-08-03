@@ -176,6 +176,74 @@ function getFileContent(path) {
 
 }
 
+function getFolderFiles(path) {
+
+  const github =
+    getGitHubConfig();
+
+  const url =
+    "https://api.github.com/repos/" +
+    github.owner +
+    "/" +
+    github.repo +
+    "/contents/" +
+    path +
+    "?ref=" +
+    github.branch;
+
+  const response = UrlFetchApp.fetch(url, {
+
+    method: "get",
+
+    headers: {
+
+      Authorization:
+        "Bearer " + github.token,
+
+      Accept:
+        "application/vnd.github+json"
+
+    },
+
+    muteHttpExceptions: true
+
+  });
+
+  if (response.getResponseCode() === 404) {
+
+    return [];
+
+  }
+
+  if (response.getResponseCode() !== 200) {
+
+    throw new Error(
+      response.getContentText()
+    );
+
+  }
+
+  const files =
+    JSON.parse(
+      response.getContentText()
+    );
+
+  return files
+    .filter(file => file.type === "file")
+    .map(file => ({
+
+      name: file.name,
+
+      path: file.path,
+
+      sha: file.sha,
+
+      size: file.size
+
+    }));
+
+}
+
 function testGetFileContent() {
 
   const content =
@@ -286,6 +354,80 @@ if (
 
 }
 
+function deleteFile(path, message) {
+
+  const github = getGitHubConfig();
+
+  const sha =
+    getFileSha(path);
+
+  if (!sha) {
+
+    return false;
+
+  }
+
+  const url =
+    "https://api.github.com/repos/" +
+    github.owner +
+    "/" +
+    github.repo +
+    "/contents/" +
+    path;
+
+  const body = {
+
+    message: message,
+
+    sha: sha,
+
+    branch: github.branch
+
+  };
+
+  const response =
+    UrlFetchApp.fetch(url, {
+
+      method: "delete",
+
+      contentType:
+        "application/json",
+
+      headers: {
+
+        Authorization:
+          "Bearer " + github.token,
+
+        Accept:
+          "application/vnd.github+json"
+
+      },
+
+      payload:
+        JSON.stringify(body),
+
+      muteHttpExceptions: true
+
+    });
+
+  const code =
+    response.getResponseCode();
+
+  if (
+    code !== 200 &&
+    code !== 204
+  ) {
+
+    throw new Error(
+      response.getContentText()
+    );
+
+  }
+
+  return true;
+
+}
+
 function testGetFileSha() {
 
   Logger.log(
@@ -311,5 +453,40 @@ function publishDataJS(products) {
   file,
   "Publish data.js"
 );
+
+}
+
+function testDeleteFile() {
+
+  deleteFile(
+
+    "test-delete.txt",
+
+    "Delete test file"
+
+  );
+
+  Logger.log(
+
+    "Test file deleted."
+
+  );
+
+}
+
+function testGetFolderFiles() {
+
+  const files =
+    getFolderFiles("images/W0027");
+
+  Logger.log(
+
+    JSON.stringify(
+      files,
+      null,
+      2
+    )
+
+  );
 
 }

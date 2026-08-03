@@ -146,9 +146,6 @@ function compareMediaManifest() {
   const drive =
     getMediaManifest();
 
-  const published =
-    getPublishedMediaManifest();
-
   const operations = [];
 
   Object.keys(drive).forEach(sku => {
@@ -156,17 +153,19 @@ function compareMediaManifest() {
     const driveFiles =
       drive[sku];
 
-    const publishedFiles =
-      published[sku] || [];
+    const githubFiles =
+      getFolderFiles(
+        "images/" + sku
+      );
+
+    // Upload
 
     driveFiles.forEach(file => {
 
       const exists =
-        publishedFiles.find(item =>
+        githubFiles.find(item =>
 
-          item.id === file.id &&
-          item.name === file.name &&
-          item.updated === file.updated
+          item.name === file.name
 
         );
 
@@ -174,13 +173,40 @@ function compareMediaManifest() {
 
         operations.push({
 
-           action: "upload",
+          action: "upload",
 
-           sku: sku,
+          sku: sku,
 
-           file: file
+          file: file
+
+        });
+
+      }
 
     });
+
+    // Delete
+
+    githubFiles.forEach(file => {
+
+      const exists =
+        driveFiles.find(item =>
+
+          item.name === file.name
+
+        );
+
+      if (!exists) {
+
+        operations.push({
+
+          action: "delete",
+
+          sku: sku,
+
+          file: file
+
+        });
 
       }
 
@@ -246,52 +272,76 @@ function syncMedia() {
 
   }
 
-  for (const operation of operations) {
+  operations.forEach(operation => {
 
-    if (operation.action !== "upload") {
+    if (operation.action === "upload") {
 
-      continue;
+      const driveFile =
+        getDriveFileBytes(
+          operation.file.id
+        );
+
+      publishFile({
+
+        fileName:
+          "images/" +
+          operation.sku +
+          "/" +
+          driveFile.name,
+
+        bytes:
+          driveFile.bytes,
+
+        binary: true
+
+      },
+
+      "Upload image " +
+      operation.sku +
+      "/" +
+      driveFile.name);
+
+      Logger.log(
+
+        "Uploaded: " +
+
+        operation.sku +
+
+        "/" +
+
+        driveFile.name
+
+      );
 
     }
 
-    const driveFile =
-      getDriveFileBytes(
-        operation.file.id
+    if (operation.action === "delete") {
+
+      deleteFile(
+
+        operation.file.path,
+
+        "Delete image " +
+
+        operation.sku +
+
+        "/" +
+
+        operation.file.name
+
       );
 
-    publishFile({
+      Logger.log(
 
-  fileName:
-    "images/" +
-    operation.sku +
-    "/" +
-    driveFile.name,
+        "Deleted: " +
 
-  bytes:
-    driveFile.bytes,
+        operation.file.path
 
-  binary: true
+      );
 
-},
-"Upload image " +
-operation.sku +
-"/" +
-driveFile.name
-);
+    }
 
-    Logger.log(
-
-      "Uploaded: " +
-
-      operation.sku +
-
-      "/" +
-
-      driveFile.name
-
-    );
-
-  }
+  });
 
   publishMediaManifest();
 

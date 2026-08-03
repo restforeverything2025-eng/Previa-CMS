@@ -228,13 +228,17 @@ function getProductFiles(sku) {
 
     result.push({
 
-      id: file.getId(),
+  id: file.getId(),
 
-      name: file.getName(),
+  name: file.getName(),
 
-      updated: file
-        .getLastUpdated()
-        .toISOString()
+  size: file.getSize(),
+
+  mimeType: file.getMimeType(),
+
+  updated: file
+    .getLastUpdated()
+    .toISOString()
 
 });
 
@@ -293,5 +297,22 @@ function testGetProductImages() {
     getProductImages("J0001");
 
   Logger.log(images);
+
+}
+
+function testGetProductFiles() {
+
+  const files =
+    getProductFiles("W0027");
+
+  Logger.log(
+
+    JSON.stringify(
+      files,
+      null,
+      2
+    )
+
+  );
 
 }

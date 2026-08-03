@@ -161,10 +161,53 @@ function validateImages(products) {
 
   products.forEach(product => {
 
-    getProductImages(product.sku);
+    const files =
+  getProductFiles(product.sku);
+
+  const imageNumbers = new Set();
+
+files.forEach(file => {
+
+  const imageNumber =
+    file.name.replace(/\.[^.]+$/, "");
+
+  if (imageNumbers.has(imageNumber)) {
+
+    throw new Error(
+
+      "Validation failed\n\n" +
+
+      "SKU: " + product.sku +
+
+      "\n\nReason:\nDuplicate image number: " +
+
+      file.name
+
+    );
+
+  }
+
+  imageNumbers.add(imageNumber);
+
+});
 
   });
 
   return true;
+
+}
+
+function testValidation() {
+
+  const products =
+    getProducts();
+
+  validateProducts(products);
+
+  validateImages(products);
+
+  Logger.log(
+    "Validation OK"
+  );
 
 }

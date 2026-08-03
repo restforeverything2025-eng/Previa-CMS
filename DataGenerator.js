@@ -50,7 +50,8 @@ function buildPublicProduct(
     price: product.price,
     status: product.status,
     dateAdded: formatDate(product.dateAdded),
-    era: product.era,
+    eraFrom: product.eraFrom,
+    eraTo: product.eraTo,
     description: product.description,
 
     images: buildImagePaths(
