@@ -286,3 +286,39 @@ Dashboard.html
 Principle:
 
 Service → HTML → User
+
+## Media Synchronization
+
+### Single Source of Truth
+
+Google Drive is the single source of truth for all product images.
+
+GitHub stores only published copies.
+
+### Synchronization Flow
+
+Google Drive
+↓
+Drive.js
+↓
+MediaSync
+↓
+GitHub.js
+↓
+GitHub Repository
+
+### Synchronization
+
+MediaSync performs bidirectional synchronization.
+
+It automatically:
+
+- uploads new images;
+- removes orphan GitHub images;
+- updates media-manifest.json after successful synchronization.
+
+### GitHub Optimization
+
+GitHub repository images are indexed using a single Repository Tree request.
+
+This replaces hundreds of individual folder requests and significantly reduces GitHub API usage for large catalogs.

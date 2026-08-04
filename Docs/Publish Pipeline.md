@@ -268,3 +268,17 @@ Possible future stages:
 - publication history
 
 The execution order should remain unchanged.
+
+Refresh Images
+
+Refresh synchronizes GitHub images with Google Drive.
+
+Steps:
+
+1. Read Google Drive.
+2. Read GitHub Repository Tree.
+3. Compare media.
+4. Upload new files.
+5. Delete orphan files.
+6. Update media-manifest.json.
+7. Return synchronization report.

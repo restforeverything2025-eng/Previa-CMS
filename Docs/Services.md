@@ -1026,3 +1026,27 @@ Used by:
 Production
 
 ---
+
+## RefreshService
+
+Purpose
+
+Runs MediaSync from Dashboard.
+
+Responsibilities
+
+- execute Refresh;
+- return synchronization report.
+
+Dependencies
+
+- MediaSync
+
+Responsibilities
+
+- synchronize Google Drive with GitHub;
+- upload new images;
+- remove orphan images;
+- update media-manifest.json;
+- generate synchronization report.
+
