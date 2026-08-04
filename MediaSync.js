@@ -144,19 +144,20 @@ function testPublishedMediaManifest() {
 function compareMediaManifest() {
 
   const drive =
-    getMediaManifest();
+  getMediaManifest();
+// Read GitHub repository only once.
+const github =
+  getRepositoryImages();
 
-  const operations = [];
+const operations = [];
 
-  Object.keys(drive).forEach(sku => {
+Object.keys(drive).forEach(sku => {
 
-    const driveFiles =
-      drive[sku];
+  const driveFiles =
+    drive[sku];
 
-    const githubFiles =
-      getFolderFiles(
-        "images/" + sku
-      );
+  const githubFiles =
+    github[sku] || [];
 
     // Upload
 

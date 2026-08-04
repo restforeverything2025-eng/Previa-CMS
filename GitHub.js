@@ -243,6 +243,120 @@ function getFolderFiles(path) {
     }));
 
 }
+/**
+ * ==========================================
+ * GitHub Repository Tree
+ * ------------------------------------------
+ * Reads the entire repository tree
+ * with a single GitHub API request.
+ * ==========================================
+ */
+function getRepositoryTree() {
+
+  const github =
+    getGitHubConfig();
+
+  const url =
+    "https://api.github.com/repos/" +
+    github.owner +
+    "/" +
+    github.repo +
+    "/git/trees/" +
+    github.branch +
+    "?recursive=1";
+
+  const response =
+    UrlFetchApp.fetch(url, {
+
+      method: "get",
+
+      headers: {
+
+        Authorization:
+          "Bearer " + github.token,
+
+        Accept:
+          "application/vnd.github+json"
+
+      },
+
+      muteHttpExceptions: true
+
+    });
+
+  if (response.getResponseCode() !== 200) {
+
+    throw new Error(
+      response.getContentText()
+    );
+
+  }
+
+  return JSON.parse(
+    response.getContentText()
+  ).tree;
+
+}
+/**
+ * ==========================================
+ * Repository Images Index
+ * ------------------------------------------
+ * Groups repository images by SKU.
+ * ==========================================
+ */
+function getRepositoryImages() {
+
+  const tree =
+    getRepositoryTree();
+
+  const images = {};
+
+  tree.forEach(item => {
+
+    if (
+      item.type !== "blob" ||
+      !item.path.startsWith("images/")
+    ) {
+
+      return;
+
+    }
+
+    const parts =
+      item.path.split("/");
+
+    if (parts.length !== 3) {
+
+      return;
+
+    }
+
+    const sku =
+      parts[1];
+
+    if (!images[sku]) {
+
+      images[sku] = [];
+
+    }
+
+    images[sku].push({
+
+      name: parts[2],
+
+      path: item.path,
+
+      sha: item.sha,
+
+      size: item.size
+
+    });
+
+  });
+
+  return images;
+
+}
 
 function testGetFileContent() {
 
@@ -485,6 +599,54 @@ function testGetFolderFiles() {
       files,
       null,
       2
+    )
+
+  );
+
+}
+
+function testRepositoryTree() {
+
+  const tree =
+    getRepositoryTree();
+
+  Logger.log(
+
+    tree.length
+
+  );
+
+  Logger.log(
+
+    JSON.stringify(
+
+      tree.slice(0, 10),
+
+      null,
+
+      2
+
+    )
+
+  );
+
+}
+
+function testRepositoryImages() {
+
+  const images =
+    getRepositoryImages();
+
+  Logger.log(
+
+    JSON.stringify(
+
+      images["W0027"],
+
+      null,
+
+      2
+
     )
 
   );
