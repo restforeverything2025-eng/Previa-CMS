@@ -38,3 +38,7 @@ Improved diagnostics and clearer validation messages.
 
 ### Mobile CMS UX
 Additional usability improvements for phones and tablets.
+
+Security v2
+
+- Move secrets from Config sheet to Script Properties.

@@ -180,3 +180,11 @@ Active
 - Dashboard
 
 MediaSync uses a single GitHub Repository Tree request for image synchronization, allowing efficient operation even with very large catalogs.
+
+---
+
+## License
+
+This project is proprietary software.
+
+See the LICENSE and NOTICE.md files for licensing information.
