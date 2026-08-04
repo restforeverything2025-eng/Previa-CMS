@@ -311,8 +311,10 @@ Actions
   ♻️ Restore
 </button>
 
-<button disabled class="dashboard-button">
-🖼 Refresh Images
+<button
+  class="dashboard-button"
+  onclick="handleAction('refresh')">
+  🖼 Refresh Images
 </button>
 
 </div>
@@ -375,6 +377,12 @@ function handleAction(action){
 
       break;
 
+    case "refresh":
+
+      refreshImages();
+
+      break;
+
     default:
 
       console.warn("Unknown action:", action);
@@ -430,6 +438,38 @@ function publishBoutique(){
 })
 
     .publishBoutique(false);
+
+}
+
+function refreshImages(){
+
+  google.script.run
+
+    .withSuccessHandler(function(result){
+
+      showReport(
+
+        "Refresh Report",
+
+        result
+
+      );
+
+    })
+
+    .withFailureHandler(function(error){
+
+      showReport(
+
+        "Refresh Error",
+
+        error.message || String(error)
+
+      );
+
+    })
+
+    .refreshImages();
 
 }
 

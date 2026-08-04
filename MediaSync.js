@@ -262,15 +262,27 @@ function syncMedia() {
   const operations =
     compareMediaManifest();
 
+      let uploaded = 0;
+
+      let deleted = 0;
+
   if (operations.length === 0) {
 
-    Logger.log(
-      "Media already synchronized."
-    );
+  Logger.log(
+    "Media already synchronized."
+  );
 
-    return;
+  return (
 
-  }
+    "Uploaded: 0" +
+
+    "\nDeleted: 0" +
+
+    "\n\nMedia already synchronized."
+
+  );
+
+}
 
   operations.forEach(operation => {
 
@@ -300,6 +312,8 @@ function syncMedia() {
       operation.sku +
       "/" +
       driveFile.name);
+
+      uploaded++;
 
       Logger.log(
 
@@ -331,6 +345,8 @@ function syncMedia() {
 
       );
 
+      deleted++;
+
       Logger.log(
 
         "Deleted: " +
@@ -345,11 +361,25 @@ function syncMedia() {
 
   publishMediaManifest();
 
-  Logger.log(
+Logger.log(
 
-    "Media synchronization completed."
+  "Media synchronization completed."
 
-  );
+);
+
+return (
+
+  "Uploaded: " +
+
+  uploaded +
+
+  "\nDeleted: " +
+
+  deleted +
+
+  "\n\nSynchronization completed successfully."
+
+);
 
 }
 
