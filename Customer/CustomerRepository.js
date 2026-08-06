@@ -115,27 +115,3 @@ return {
 };
 
 })();
-
-function testCustomerRepository() {
-
-    const sheet =
-        CustomerRepository.getSheet();
-
-    Logger.log(sheet.getName());
-
-}
-
-function testFindCustomer() {
-
-    const customer =
-        CustomerRepository.findByProvider(
-
-            "telegram",
-
-            "123456789"
-
-        );
-
-    Logger.log(customer);
-
-}

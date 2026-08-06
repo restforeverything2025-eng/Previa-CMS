@@ -4,16 +4,16 @@ PREVIA
 
 Customer/index.js
 
-Customer Domain
+Customer Domain Entry Point
 
-Public entry point for the Customer domain.
+Responsibility:
+- Expose the public Customer Domain API.
 ==================================================
 */
 
-const Customer = (() => {
+const CustomerAPI = {
 
-    return {
+    getOrCreateCustomer:
+        CustomerService.getOrCreateCustomer
 
-    };
-
-})();
+};
