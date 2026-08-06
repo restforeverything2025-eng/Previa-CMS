@@ -79,23 +79,23 @@ const CustomerService = (() => {
 
 function testGetOrCreateCustomer() {
 
-    const customer = {
+    const customer = CustomerModel.create({
 
-        customerId: "C000001",
+    customerId: "C000001",
 
-        provider: "telegram",
+    provider: "telegram",
 
-        providerId: "123456789",
+    providerId: "123456789",
 
-        displayName: "Test Customer",
+    displayName: "Test Customer",
 
-        createdAt: new Date(),
+    createdAt: new Date(),
 
-        updatedAt: new Date(),
+    updatedAt: new Date(),
 
-        status: "active"
+    status: "active"
 
-    };
+});
 
     const result =
 
