@@ -33,23 +33,60 @@ const CustomerService = (() => {
 
 }
 
-    function getOrCreateCustomer(customer) {
+    function generateCustomerId() {
+
+    const customers =
+        CustomerRepository.getAll();
+
+    const nextNumber =
+        customers.length + 1;
+
+    return "C" +
+        String(nextNumber).padStart(6, "0");
+
+}
+
+    function getOrCreateCustomer(data) {
 
     const existingCustomer =
-
         findByProvider(
-
-            customer.provider,
-
-            customer.providerId
-
+            data.provider,
+            data.providerId
         );
- 
+
     if (existingCustomer) {
 
         return existingCustomer;
 
     }
+
+    const now = new Date();
+
+    const customer =
+        CustomerModel.create({
+
+            customerId:
+                generateCustomerId(),
+
+            provider:
+                data.provider,
+
+            providerId:
+                data.providerId,
+
+            displayName:
+                data.displayName,
+
+            createdAt:
+                now,
+
+            updatedAt:
+                now,
+
+            status:
+                "active"
+
+        });
 
     CustomerRepository.create(customer);
 

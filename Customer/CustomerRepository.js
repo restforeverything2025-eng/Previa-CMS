@@ -75,13 +75,54 @@ const CustomerRepository = (() => {
 
         ) {
 
-            return values[row];
+            return {
+
+    customerId:
+        values[row][0],
+
+    provider:
+        values[row][1],
+
+    providerId:
+        String(values[row][2]),
+
+    displayName:
+        values[row][3],
+
+    createdAt:
+        values[row][4],
+
+    updatedAt:
+        values[row][5],
+
+    status:
+        values[row][6]
+
+};
 
         }
 
     }
 
     return null;
+
+}
+
+   function getAll() {
+
+    const sheet =
+        getSheet();
+
+    const values =
+        sheet.getDataRange().getValues();
+
+    if (values.length <= 1) {
+
+        return [];
+
+    }
+
+    return values.slice(1);
 
 }
 
@@ -109,6 +150,8 @@ return {
     getSheet,
 
     findByProvider,
+
+    getAll,
 
     create
 

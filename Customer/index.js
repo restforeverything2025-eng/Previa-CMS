@@ -2,18 +2,10 @@
 ==================================================
 PREVIA
 
-Customer/index.js
+Customer Domain Index
 
-Customer Domain Entry Point
+The Customer public API is defined in CustomerAPI.js.
 
-Responsibility:
-- Expose the public Customer Domain API.
+This file intentionally contains no executable code.
 ==================================================
 */
-
-const CustomerAPI = {
-
-    getOrCreateCustomer:
-        CustomerService.getOrCreateCustomer
-
-};

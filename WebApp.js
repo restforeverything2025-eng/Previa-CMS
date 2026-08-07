@@ -10,6 +10,57 @@ function doGet() {
 
 }
 
+function doPost(e) {
+
+    try {
+
+        const request =
+            JSON.parse(e.postData.contents);
+
+        if (
+            request.action ===
+            "customer.getOrCreate"
+        ) {
+
+            const customer =
+                CustomerEndpoint.handle(
+                    request.data
+                );
+
+            return ContentService
+                .createTextOutput(
+                    JSON.stringify({
+                        success: true,
+                        customer: customer
+                    })
+                )
+                .setMimeType(
+                    ContentService.MimeType.JSON
+                );
+
+        }
+
+        throw new Error(
+            "Unknown API action."
+        );
+
+    } catch (error) {
+
+        return ContentService
+            .createTextOutput(
+                JSON.stringify({
+                    success: false,
+                    error: error.message
+                })
+            )
+            .setMimeType(
+                ContentService.MimeType.JSON
+            );
+
+    }
+
+}
+
 function publishFromWeb() {
 
   Logger.log("publishFromWeb started");
@@ -45,3 +96,4 @@ function getArchivedProductBySku(sku) {
   return findArchivedProductBySku(sku);
 
 }
+
