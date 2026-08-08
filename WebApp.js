@@ -17,6 +17,13 @@ function doPost(e) {
         const request =
             JSON.parse(e.postData.contents);
 
+
+        /*
+        =========================================
+        Customer
+        =========================================
+        */
+
         if (
             request.action ===
             "customer.getOrCreate"
@@ -40,9 +47,101 @@ function doPost(e) {
 
         }
 
+
+        /*
+        =========================================
+        Favorites: Get
+        =========================================
+        */
+
+        if (
+            request.action ===
+            "favorites.get"
+        ) {
+
+            const favorites =
+                FavoritesEndpoint.getFavorites(
+                    request.data
+                );
+
+            return ContentService
+                .createTextOutput(
+                    JSON.stringify({
+                        success: true,
+                        favorites: favorites
+                    })
+                )
+                .setMimeType(
+                    ContentService.MimeType.JSON
+                );
+
+        }
+
+
+        /*
+        =========================================
+        Favorites: Add
+        =========================================
+        */
+
+        if (
+            request.action ===
+            "favorites.add"
+        ) {
+
+            const favorite =
+                FavoritesEndpoint.addFavorite(
+                    request.data
+                );
+
+            return ContentService
+                .createTextOutput(
+                    JSON.stringify({
+                        success: true,
+                        favorite: favorite
+                    })
+                )
+                .setMimeType(
+                    ContentService.MimeType.JSON
+                );
+
+        }
+
+
+        /*
+        =========================================
+        Favorites: Remove
+        =========================================
+        */
+
+        if (
+            request.action ===
+            "favorites.remove"
+        ) {
+
+            const removed =
+                FavoritesEndpoint.removeFavorite(
+                    request.data
+                );
+
+            return ContentService
+                .createTextOutput(
+                    JSON.stringify({
+                        success: true,
+                        removed: removed
+                    })
+                )
+                .setMimeType(
+                    ContentService.MimeType.JSON
+                );
+
+        }
+
+
         throw new Error(
             "Unknown API action."
         );
+
 
     } catch (error) {
 
