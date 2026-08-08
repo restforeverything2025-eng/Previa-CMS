@@ -7,6 +7,7 @@ CustomerRepository.js
 Customer Repository
 
 Responsibility:
+
 - Manage Customer Registry.
 - Read customer records.
 - Write customer records.
@@ -24,41 +25,141 @@ const CustomerRepository = (() => {
         "provider",
         "providerId",
         "displayName",
+        "username",
         "createdAt",
         "updatedAt",
         "status"
 
     ];
 
+
     function getSheet() {
 
-    const spreadsheet =
-        SpreadsheetApp.getActiveSpreadsheet();
+        const spreadsheet =
+            SpreadsheetApp.getActiveSpreadsheet();
 
-    let sheet =
-        spreadsheet.getSheetByName(SHEET_NAME);
+        let sheet =
+            spreadsheet.getSheetByName(SHEET_NAME);
 
-    if (!sheet) {
+        if (!sheet) {
 
-        sheet =
-            spreadsheet.insertSheet(SHEET_NAME);
+            sheet =
+                spreadsheet.insertSheet(SHEET_NAME);
 
-        sheet
-            .getRange(
-                1,
-                1,
-                1,
-                HEADERS.length
-            )
-            .setValues([HEADERS]);
+            sheet
+                .getRange(
+                    1,
+                    1,
+                    1,
+                    HEADERS.length
+                )
+                .setValues([HEADERS]);
+
+        }
+
+        return sheet;
 
     }
 
-    return sheet;
-
-}
 
     function findByProvider(provider, providerId) {
+
+        const sheet =
+            getSheet();
+
+        const values =
+            sheet.getDataRange().getValues();
+
+        for (
+            let row = 1;
+            row < values.length;
+            row++
+        ) {
+
+            if (
+
+                values[row][1] === provider &&
+                String(values[row][2]) === String(providerId)
+
+            ) {
+
+                return {
+
+                    customerId:
+                        values[row][0],
+
+                    provider:
+                        values[row][1],
+
+                    providerId:
+                        String(values[row][2]),
+
+                    displayName:
+                        values[row][3],
+
+                    username:
+                        values[row][4],
+
+                    createdAt:
+                        values[row][5],
+
+                    updatedAt:
+                        values[row][6],
+
+                    status:
+                        values[row][7]
+
+                };
+
+            }
+
+        }
+
+        return null;
+
+    }
+
+
+    function getAll() {
+
+        const sheet =
+            getSheet();
+
+        const values =
+            sheet.getDataRange().getValues();
+
+        if (values.length <= 1) {
+
+            return [];
+
+        }
+
+        return values.slice(1);
+
+    }
+
+
+    function create(customer) {
+
+        const sheet =
+            getSheet();
+
+        sheet.appendRow([
+
+            customer.customerId,
+            customer.provider,
+            customer.providerId,
+            customer.displayName,
+            customer.username,
+            customer.createdAt,
+            customer.updatedAt,
+            customer.status
+
+        ]);
+
+    }
+
+    function update(customer) {
 
     const sheet =
         getSheet();
@@ -66,86 +167,62 @@ const CustomerRepository = (() => {
     const values =
         sheet.getDataRange().getValues();
 
-    for (let row = 1; row < values.length; row++) {
+    for (
+        let row = 1;
+        row < values.length;
+        row++
+    ) {
 
         if (
-
-            values[row][1] === provider &&
-            String(values[row][2]) === String(providerId)
-
+            String(values[row][0]) ===
+            String(customer.customerId)
         ) {
 
-            return {
+            sheet
+                .getRange(
+                    row + 1,
+                    1,
+                    1,
+                    HEADERS.length
+                )
+                .setValues([
 
-    customerId:
-        values[row][0],
+                    [
 
-    provider:
-        values[row][1],
+                        customer.customerId,
 
-    providerId:
-        String(values[row][2]),
+                        customer.provider,
 
-    displayName:
-        values[row][3],
+                        customer.providerId,
 
-    createdAt:
-        values[row][4],
+                        customer.displayName,
 
-    updatedAt:
-        values[row][5],
+                        customer.username,
 
-    status:
-        values[row][6]
+                        customer.createdAt,
 
-};
+                        customer.updatedAt,
+
+                        customer.status
+
+                    ]
+
+                ]);
+
+            return;
 
         }
 
     }
 
-    return null;
+    throw new Error(
+        "Customer not found: " +
+        customer.customerId
+    );
 
 }
 
-   function getAll() {
-
-    const sheet =
-        getSheet();
-
-    const values =
-        sheet.getDataRange().getValues();
-
-    if (values.length <= 1) {
-
-        return [];
-
-    }
-
-    return values.slice(1);
-
-}
-
-   function create(customer) {
-
-    const sheet =
-        getSheet();
-
-    sheet.appendRow([
-
-        customer.customerId,
-        customer.provider,
-        customer.providerId,
-        customer.displayName,
-        customer.createdAt,
-        customer.updatedAt,
-        customer.status
-
-    ]);
-
-}
-
-return {
+    return {
 
     getSheet,
 
@@ -153,7 +230,9 @@ return {
 
     getAll,
 
-    create
+    create,
+
+    update
 
 };
 

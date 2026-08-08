@@ -25,6 +25,8 @@ const CustomerModel = (() => {
 
         displayName,
 
+        username,
+
         createdAt,
 
         updatedAt,
@@ -42,6 +44,8 @@ const CustomerModel = (() => {
             providerId,
 
             displayName,
+
+            username,
 
             createdAt,
 
@@ -64,6 +68,7 @@ const CustomerModel = (() => {
             "provider" in value &&
             "providerId" in value &&
             "displayName" in value &&
+            "username" in value &&
             "createdAt" in value &&
             "updatedAt" in value &&
             "status" in value

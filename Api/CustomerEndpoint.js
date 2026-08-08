@@ -7,6 +7,7 @@ CustomerEndpoint.js
 Customer Endpoint
 
 Responsibility:
+
 - Receive Customer API requests.
 - Validate request structure.
 - Delegate to CustomerAPI.
@@ -16,6 +17,52 @@ Responsibility:
 */
 
 const CustomerEndpoint = (() => {
+
+    /*
+    =========================================
+    Find existing Customer
+    =========================================
+    */
+
+    function find(data) {
+
+        if (!data) {
+
+            throw new Error(
+                "Customer request data is required."
+            );
+
+        }
+
+        if (
+            data.provider === undefined ||
+            data.providerId === undefined
+        ) {
+
+            throw new Error(
+                "Customer request is missing required fields."
+            );
+
+        }
+
+        return CustomerAPI.findCustomer({
+
+            provider:
+                data.provider,
+
+            providerId:
+                data.providerId
+
+        });
+
+    }
+
+
+    /*
+    =========================================
+    Get or Create Customer
+    =========================================
+    */
 
     function handle(data) {
 
@@ -41,20 +88,26 @@ const CustomerEndpoint = (() => {
 
         return CustomerAPI.getOrCreateCustomer({
 
-            provider:
-                data.provider,
+    provider:
+        data.provider,
 
-            providerId:
-                data.providerId,
+    providerId:
+        data.providerId,
 
-            displayName:
-                data.displayName
+    displayName:
+        data.displayName,
 
-        });
+    username:
+        data.username
+
+});
 
     }
 
+
     return {
+
+        find,
 
         handle
 

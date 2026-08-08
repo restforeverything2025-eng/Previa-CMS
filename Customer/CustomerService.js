@@ -54,11 +54,69 @@ const CustomerService = (() => {
             data.providerId
         );
 
+
+    /*
+    =========================================
+    Existing Customer
+    =========================================
+    */
+
     if (existingCustomer) {
+
+        const username =
+            data.username || "";
+
+        if (
+            existingCustomer.username !== username
+        ) {
+
+            const updatedCustomer =
+                CustomerModel.create({
+
+                    customerId:
+                        existingCustomer.customerId,
+
+                    provider:
+                        existingCustomer.provider,
+
+                    providerId:
+                        existingCustomer.providerId,
+
+                    displayName:
+                        existingCustomer.displayName,
+
+                    username:
+                        username,
+
+                    createdAt:
+                        existingCustomer.createdAt,
+
+                    updatedAt:
+                        new Date(),
+
+                    status:
+                        existingCustomer.status
+
+                });
+
+            CustomerRepository.update(
+                updatedCustomer
+            );
+
+            return updatedCustomer;
+
+        }
 
         return existingCustomer;
 
     }
+
+
+    /*
+    =========================================
+    New Customer
+    =========================================
+    */
 
     const now = new Date();
 
@@ -76,6 +134,9 @@ const CustomerService = (() => {
 
             displayName:
                 data.displayName,
+
+            username:
+                data.username || "",
 
             createdAt:
                 now,
