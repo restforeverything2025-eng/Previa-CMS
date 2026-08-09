@@ -47,6 +47,34 @@ function doPost(e) {
 
         }
 
+        /*
+=========================================
+Customer: Find
+=========================================
+*/
+
+if (
+    request.action ===
+    "customer.find"
+) {
+
+    const customer =
+        CustomerEndpoint.find(
+            request.data
+        );
+
+    return ContentService
+        .createTextOutput(
+            JSON.stringify({
+                success: true,
+                customer: customer
+            })
+        )
+        .setMimeType(
+            ContentService.MimeType.JSON
+        );
+
+}
 
         /*
         =========================================
