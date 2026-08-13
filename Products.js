@@ -161,3 +161,36 @@ function testGetProducts(){
   Logger.log(products);
 
 }
+
+function debugProductsHeaders() {
+
+  const sheet =
+    SpreadsheetApp
+      .getActiveSpreadsheet()
+      .getSheetByName("Products");
+
+  const headers =
+    sheet
+      .getRange(
+        1,
+        1,
+        1,
+        sheet.getLastColumn()
+      )
+      .getValues()[0];
+
+  Logger.log("=== PRODUCTS HEADERS ===");
+
+  headers.forEach((header, index) => {
+
+    Logger.log(
+      index +
+      " | [" +
+      header +
+      "] | length=" +
+      String(header).length
+    );
+
+  });
+
+}
