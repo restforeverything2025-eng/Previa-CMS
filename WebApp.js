@@ -186,15 +186,17 @@ if (
               );
 
             return ContentService
-                 .createTextOutput(
-                    JSON.stringify({
-                        success: true,
-                        order: created
-                    })
-             )
-             .setMimeType(
-                  ContentService.MimeType.JSON
-           );
+                .createTextOutput(
+                     JSON.stringify({
+                         success: true,
+                         order: created.order,
+                         items: created.items
+            })
+    )
+
+    .setMimeType(
+        ContentService.MimeType.JSON
+    );
 
      }
 
@@ -216,14 +218,16 @@ if (
 
             return ContentService
                  .createTextOutput(
-                     JSON.stringify({
+                      JSON.stringify({
                          success: true,
-                         order: found
-                })
-           )
-            .setMimeType(
-                  ContentService.MimeType.JSON
-     );
+                         order: found.order,
+                         items: found.items
+           })
+    )
+    
+    .setMimeType(
+        ContentService.MimeType.JSON
+    );
 
 }
 

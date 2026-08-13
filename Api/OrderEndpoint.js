@@ -24,47 +24,55 @@ const OrderEndpoint = (() => {
 
     function create(data) {
 
-        if (!data) {
+    if (!data) {
 
-            throw new Error(
-                "Order request data is required."
-            );
-
-        }
-
-        if (
-            data.order === undefined
-        ) {
-
-            throw new Error(
-                "Order data is required."
-            );
-
-        }
-
-        if (
-            data.items === undefined
-        ) {
-
-            throw new Error(
-                "Order items are required."
-            );
-
-        }
-
-        const repository =
-            new OrderRepositoryAdapter();
-
-        return repository.save(
-
-            data.order,
-
-            data.items
-
+        throw new Error(
+            "Order request data is required."
         );
 
     }
 
+    if (
+        data.order === undefined
+    ) {
+
+        throw new Error(
+            "Order data is required."
+        );
+
+    }
+
+    if (
+        data.items === undefined
+    ) {
+
+        throw new Error(
+            "Order items are required."
+        );
+
+    }
+
+    const repository =
+    new OrderRepositoryAdapter();
+
+const result =
+    repository.save(
+
+        data.order,
+
+        data.items
+
+    );
+
+    return {
+
+        order: result.order,
+
+        items: result.items
+
+    };
+
+}
 
     /*
     =========================================
@@ -93,13 +101,13 @@ const OrderEndpoint = (() => {
         }
 
         const repository =
-            new OrderRepositoryAdapter();
+    new OrderRepositoryAdapter();
 
-        return repository.findById(
+return repository.findById(
 
-            data.order_id
+    data.order_id
 
-        );
+);
 
     }
 
