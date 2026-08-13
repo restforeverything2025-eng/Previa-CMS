@@ -231,6 +231,35 @@ if (
 
 }
 
+/*
+=========================================
+Products: Find
+=========================================
+*/
+
+if (
+    request.action ===
+    "product.find"
+) {
+
+    const found =
+        ProductEndpoint.find(
+            request.data
+        );
+
+    return ContentService
+        .createTextOutput(
+            JSON.stringify({
+                success: true,
+                product: found
+            })
+        )
+        .setMimeType(
+            ContentService.MimeType.JSON
+        );
+
+}
+
         throw new Error(
             "Unknown API action."
         );
