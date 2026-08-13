@@ -17,6 +17,10 @@ function doPost(e) {
         const request =
             JSON.parse(e.postData.contents);
 
+        Logger.log(
+            "PREVIA API ACTION: " +
+            request.action
+       );
 
         /*
         =========================================
@@ -165,6 +169,63 @@ if (
 
         }
 
+        /*
+         =========================================
+                  Orders: Create
+         =========================================
+        */
+
+        if (
+            request.action ===
+            "order.create"
+      ) {
+
+            const created =
+                OrderEndpoint.create(
+                   request.data
+              );
+
+            return ContentService
+                 .createTextOutput(
+                    JSON.stringify({
+                        success: true,
+                        order: created
+                    })
+             )
+             .setMimeType(
+                  ContentService.MimeType.JSON
+           );
+
+     }
+
+        /*
+         =========================================
+              Orders: Find
+         =========================================
+        */
+
+         if (
+             request.action ===
+             "order.find"
+  ) {
+
+             const found =
+                 OrderEndpoint.find(
+                     request.data
+          );
+
+            return ContentService
+                 .createTextOutput(
+                     JSON.stringify({
+                         success: true,
+                         order: found
+                })
+           )
+            .setMimeType(
+                  ContentService.MimeType.JSON
+     );
+
+}
 
         throw new Error(
             "Unknown API action."
