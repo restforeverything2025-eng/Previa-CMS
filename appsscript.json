@@ -9,6 +9,13 @@
     "https://www.googleapis.com/auth/script.external_request",
     "https://www.googleapis.com/auth/script.container.ui"
   ],
+  "enabledAdvancedServices": [
+    {
+      "userSymbol": "Sheets",
+      "serviceId": "sheets",
+      "version": "v4"
+    }
+  ],
   "webapp": {
     "executeAs": "USER_DEPLOYING",
     "access": "MYSELF"

@@ -3,121 +3,60 @@
  * PREVIA
  * OrderEndpoint.js
  *
- * Order Endpoint
- *
- * Responsibility:
- * - Receive Order API requests.
- * - Validate request structure.
- * - Delegate to OrderRepositoryAdapter.
- * - Return a transport-safe response.
- * - Do not contain business logic.
+ * Order endpoint for request validation and repository dispatch.
  * ============================================================
  */
 
 const OrderEndpoint = (() => {
 
-    /*
-    =========================================
-    Create Order
-    =========================================
-    */
-
-    function create(data) {
-
-    if (!data) {
-
-        throw new Error(
-            "Order request data is required."
-        );
-
+  function create(data) {
+    if (!data || typeof data !== "object") {
+      return {
+        success: false,
+        code: "VALIDATION_ERROR",
+        retryable: false,
+        errors: ["Order request body is required."]
+      };
     }
 
-    if (
-        data.order === undefined
-    ) {
-
-        throw new Error(
-            "Order data is required."
-        );
-
+    if (!data.order || !Array.isArray(data.items)) {
+      return {
+        success: false,
+        code: "VALIDATION_ERROR",
+        retryable: false,
+        errors: ["Order payload must include order and items."]
+      };
     }
 
-    if (
-        data.items === undefined
-    ) {
+    const repository = new OrderRepositoryAdapter();
+    return repository.save(data.order, data.items);
+  }
 
-        throw new Error(
-            "Order items are required."
-        );
-
+  function find(data) {
+    if (!data || typeof data !== "object") {
+      return {
+        success: false,
+        code: "VALIDATION_ERROR",
+        retryable: false,
+        errors: ["Order lookup requires a payload object."]
+      };
     }
 
-    const repository =
-    new OrderRepositoryAdapter();
-
-const result =
-    repository.save(
-
-        data.order,
-
-        data.items
-
-    );
-
-    return {
-
-        order: result.order,
-
-        items: result.items
-
-    };
-
-}
-
-    /*
-    =========================================
-    Find Order
-    =========================================
-    */
-
-    function find(data) {
-
-        if (!data) {
-
-            throw new Error(
-                "Order request data is required."
-            );
-
-        }
-
-        if (
-            data.order_id === undefined
-        ) {
-
-            throw new Error(
-                "Order ID is required."
-            );
-
-        }
-
-        const repository =
-    new OrderRepositoryAdapter();
-
-return repository.findById(
-
-    data.order_id
-
-);
-
+    if (!data.order_id) {
+      return {
+        success: false,
+        code: "VALIDATION_ERROR",
+        retryable: false,
+        errors: ["Order ID is required."]
+      };
     }
 
+    const repository = new OrderRepositoryAdapter();
+    return repository.findById(data.order_id);
+  }
 
-    return {
-
-        create,
-
-        find
-
-    };
-
+  return {
+    create,
+    find
+  };
 })();

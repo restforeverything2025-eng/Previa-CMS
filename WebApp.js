@@ -1,320 +1,141 @@
 function doGet() {
-
   return HtmlService
-    .createHtmlOutputFromFile(
-      "Index"
-    )
-    .setTitle(
-      "PREVIA CMS"
-    );
+    .createHtmlOutputFromFile("Index")
+    .setTitle("PREVIA CMS");
+}
 
+function respondJson(payload) {
+  return ContentService
+    .createTextOutput(JSON.stringify(payload))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+function parsePostBody(rawBody) {
+  if (!rawBody) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(rawBody);
+  } catch (error) {
+    return null;
+  }
 }
 
 function doPost(e) {
+  try {
+    const rawBody = e && e.postData && e.postData.contents ? e.postData.contents : "";
+    const request = parsePostBody(rawBody);
 
-    try {
-
-        const request =
-            JSON.parse(e.postData.contents);
-
-        Logger.log(
-            "PREVIA API ACTION: " +
-            request.action
-       );
-
-        /*
-        =========================================
-        Customer
-        =========================================
-        */
-
-        if (
-            request.action ===
-            "customer.getOrCreate"
-        ) {
-
-            const customer =
-                CustomerEndpoint.handle(
-                    request.data
-                );
-
-            return ContentService
-                .createTextOutput(
-                    JSON.stringify({
-                        success: true,
-                        customer: customer
-                    })
-                )
-                .setMimeType(
-                    ContentService.MimeType.JSON
-                );
-
-        }
-
-        /*
-=========================================
-Customer: Find
-=========================================
-*/
-
-if (
-    request.action ===
-    "customer.find"
-) {
-
-    const customer =
-        CustomerEndpoint.find(
-            request.data
-        );
-
-    return ContentService
-        .createTextOutput(
-            JSON.stringify({
-                success: true,
-                customer: customer
-            })
-        )
-        .setMimeType(
-            ContentService.MimeType.JSON
-        );
-
-}
-
-        /*
-        =========================================
-        Favorites: Get
-        =========================================
-        */
-
-        if (
-            request.action ===
-            "favorites.get"
-        ) {
-
-            const favorites =
-                FavoritesEndpoint.getFavorites(
-                    request.data
-                );
-
-            return ContentService
-                .createTextOutput(
-                    JSON.stringify({
-                        success: true,
-                        favorites: favorites
-                    })
-                )
-                .setMimeType(
-                    ContentService.MimeType.JSON
-                );
-
-        }
-
-
-        /*
-        =========================================
-        Favorites: Add
-        =========================================
-        */
-
-        if (
-            request.action ===
-            "favorites.add"
-        ) {
-
-            const favorite =
-                FavoritesEndpoint.addFavorite(
-                    request.data
-                );
-
-            return ContentService
-                .createTextOutput(
-                    JSON.stringify({
-                        success: true,
-                        favorite: favorite
-                    })
-                )
-                .setMimeType(
-                    ContentService.MimeType.JSON
-                );
-
-        }
-
-
-        /*
-        =========================================
-        Favorites: Remove
-        =========================================
-        */
-
-        if (
-            request.action ===
-            "favorites.remove"
-        ) {
-
-            const removed =
-                FavoritesEndpoint.removeFavorite(
-                    request.data
-                );
-
-            return ContentService
-                .createTextOutput(
-                    JSON.stringify({
-                        success: true,
-                        removed: removed
-                    })
-                )
-                .setMimeType(
-                    ContentService.MimeType.JSON
-                );
-
-        }
-
-        /*
-         =========================================
-                  Orders: Create
-         =========================================
-        */
-
-        if (
-            request.action ===
-            "order.create"
-      ) {
-
-            const created =
-                OrderEndpoint.create(
-                   request.data
-              );
-
-            return ContentService
-                .createTextOutput(
-                     JSON.stringify({
-                         success: true,
-                         order: created.order,
-                         items: created.items
-            })
-    )
-
-    .setMimeType(
-        ContentService.MimeType.JSON
-    );
-
-     }
-
-        /*
-         =========================================
-              Orders: Find
-         =========================================
-        */
-
-         if (
-             request.action ===
-             "order.find"
-  ) {
-
-             const found =
-                 OrderEndpoint.find(
-                     request.data
-          );
-
-            return ContentService
-                 .createTextOutput(
-                      JSON.stringify({
-                         success: true,
-                         order: found.order,
-                         items: found.items
-           })
-    )
-    
-    .setMimeType(
-        ContentService.MimeType.JSON
-    );
-
-}
-
-/*
-=========================================
-Products: Find
-=========================================
-*/
-
-if (
-    request.action ===
-    "product.find"
-) {
-
-    const found =
-        ProductEndpoint.find(
-            request.data
-        );
-
-    return ContentService
-        .createTextOutput(
-            JSON.stringify({
-                success: true,
-                product: found
-            })
-        )
-        .setMimeType(
-            ContentService.MimeType.JSON
-        );
-
-}
-
-        throw new Error(
-            "Unknown API action."
-        );
-
-
-    } catch (error) {
-
-        return ContentService
-            .createTextOutput(
-                JSON.stringify({
-                    success: false,
-                    error: error.message
-                })
-            )
-            .setMimeType(
-                ContentService.MimeType.JSON
-            );
-
+    if (!request || typeof request !== "object") {
+      return respondJson({
+        success: false,
+        code: "VALIDATION_ERROR",
+        retryable: false,
+        errors: ["Request body is invalid JSON."]
+      });
     }
 
+    Logger.log("PREVIA API ACTION: " + request.action);
+
+    if (request.action === "customer.getOrCreate") {
+      const customer = CustomerEndpoint.handle(request.data);
+      return respondJson({ success: true, customer: customer });
+    }
+
+    if (request.action === "customer.find") {
+      const customer = CustomerEndpoint.find(request.data);
+      return respondJson({ success: true, customer: customer });
+    }
+
+    if (request.action === "favorites.get") {
+      const favorites = FavoritesEndpoint.getFavorites(request.data);
+      return respondJson({ success: true, favorites: favorites });
+    }
+
+    if (request.action === "favorites.add") {
+      const favorite = FavoritesEndpoint.addFavorite(request.data);
+      return respondJson({ success: true, favorite: favorite });
+    }
+
+    if (request.action === "favorites.remove") {
+      const removed = FavoritesEndpoint.removeFavorite(request.data);
+      return respondJson({ success: true, removed: removed });
+    }
+
+    if (request.action === "order.create" || request.action === "order.find") {
+      const hasHmacEnvelope = Boolean(request.payload && request.auth);
+
+      if (!hasHmacEnvelope) {
+        return respondJson({
+          success: false,
+          code: "AUTHENTICATION_ERROR",
+          retryable: false
+        });
+      }
+
+      const validAuth = verifyOrderAuthEnvelope(request, Date.now());
+
+      if (!validAuth) {
+        return respondJson({
+          success: false,
+          code: "AUTHENTICATION_ERROR",
+          retryable: false
+        });
+      }
+
+      let parsedPayload = null;
+
+      try {
+        parsedPayload = JSON.parse(request.payload);
+      } catch (error) {
+        return respondJson({
+          success: false,
+          code: "AUTHENTICATION_ERROR",
+          retryable: false
+        });
+      }
+
+      if (request.action === "order.create") {
+        return respondJson(OrderEndpoint.create(parsedPayload));
+      }
+
+      if (request.action === "order.find") {
+        return respondJson(OrderEndpoint.find(parsedPayload));
+      }
+    }
+
+    if (request.action === "product.find") {
+      const found = ProductEndpoint.find(request.data);
+      return respondJson({ success: true, product: found });
+    }
+
+    throw new Error("Unknown API action.");
+  } catch (error) {
+    return respondJson({
+      success: false,
+      code: "PERSISTENCE_ERROR",
+      retryable: true
+    });
+  }
 }
 
 function publishFromWeb() {
-
   Logger.log("publishFromWeb started");
-
   return publishBoutique(false);
-
 }
 
 function refreshImagesFromWeb() {
-
   Logger.log("refreshImagesFromWeb started");
-
   refreshMedia();
-
   return "Images synchronized successfully.";
-
 }
 
-/**
- * Returns product information by SKU for Dashboard.
- */
 function getProductBySku(sku) {
-
   return findProductBySku(sku);
-
 }
 
-/**
- * Returns an archived product by SKU.
- */
 function getArchivedProductBySku(sku) {
-
   return findArchivedProductBySku(sku);
-
 }
 

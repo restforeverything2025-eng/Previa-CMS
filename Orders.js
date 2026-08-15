@@ -4,9 +4,7 @@
  * Orders Service
  * ============================================================
  *
- * Reads and writes Orders and OrderItems
- * in Google Sheets.
- *
+ * Reads and writes Orders and OrderItems in Google Sheets.
  * This module is storage-related only.
  * Business rules belong to PREVIA Core.
  * ============================================================
@@ -15,42 +13,45 @@
 const ORDERS_SHEET = "Orders";
 const ORDER_ITEMS_SHEET = "OrderItems";
 
+function getSheetHeaders(sheet) {
+  if (!sheet) {
+    return [];
+  }
+
+  const values = sheet.getDataRange().getValues();
+
+  if (!values.length) {
+    return [];
+  }
+
+  return values[0];
+}
 
 function getOrders() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ORDERS_SHEET);
 
-  const sheet =
-    SpreadsheetApp
-      .getActiveSpreadsheet()
-      .getSheetByName(ORDERS_SHEET);
+  if (!sheet) {
+    return [];
+  }
 
-  const data =
-    sheet
-      .getDataRange()
-      .getValues();
+  const data = sheet.getDataRange().getValues();
 
   if (data.length <= 1) {
     return [];
   }
 
   const headers = data[0];
-
   const orders = [];
 
-  for (let i = 1; i < data.length; i++) {
-
-    if (
-      data[i].every(cell => cell === "")
-    ) {
+  for (let i = 1; i < data.length; i += 1) {
+    if (data[i].every(cell => cell === "")) {
       continue;
     }
 
     const order = {};
 
-    for (let j = 0; j < headers.length; j++) {
-
-      order[headers[j]] =
-        data[i][j];
-
+    for (let j = 0; j < headers.length; j += 1) {
+      order[headers[j]] = data[i][j];
     }
 
     orders.push(order);
@@ -59,48 +60,35 @@ function getOrders() {
   return orders;
 }
 
-
 function getOrderItems(orderId) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(ORDER_ITEMS_SHEET);
 
-  const sheet =
-    SpreadsheetApp
-      .getActiveSpreadsheet()
-      .getSheetByName(ORDER_ITEMS_SHEET);
+  if (!sheet) {
+    return [];
+  }
 
-  const data =
-    sheet
-      .getDataRange()
-      .getValues();
+  const data = sheet.getDataRange().getValues();
 
   if (data.length <= 1) {
     return [];
   }
 
   const headers = data[0];
-
   const items = [];
 
-  for (let i = 1; i < data.length; i++) {
-
-    if (
-      data[i].every(cell => cell === "")
-    ) {
+  for (let i = 1; i < data.length; i += 1) {
+    if (data[i].every(cell => cell === "")) {
       continue;
     }
 
-    if (
-      data[i][0] !== orderId
-    ) {
+    if (data[i][0] !== orderId) {
       continue;
     }
 
     const item = {};
 
-    for (let j = 0; j < headers.length; j++) {
-
-      item[headers[j]] =
-        data[i][j];
-
+    for (let j = 0; j < headers.length; j += 1) {
+      item[headers[j]] = data[i][j];
     }
 
     items.push(item);
@@ -109,16 +97,9 @@ function getOrderItems(orderId) {
   return items;
 }
 
-
 function findOrderById(orderId) {
-
-  const orders =
-    getOrders();
-
-  const order =
-    orders.find(
-      item => item.order_id === orderId
-    );
+  const orders = getOrders();
+  const order = orders.find(item => item.order_id === orderId);
 
   if (!order) {
     return null;
@@ -130,314 +111,134 @@ function findOrderById(orderId) {
   };
 }
 
+function toSheetCellValue(value) {
+  if (value === undefined || value === null) {
+    return { stringValue: "" };
+  }
+
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return { numberValue: value };
+  }
+
+  if (typeof value === "boolean") {
+    return { boolValue: value };
+  }
+
+  if (value instanceof Date) {
+    return { stringValue: value.toISOString() };
+  }
+
+  return { stringValue: String(value) };
+}
 
 function saveOrder(order, items = []) {
+  const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
 
-  const spreadsheet =
-    SpreadsheetApp
-      .getActiveSpreadsheet();
+  if (!spreadsheet) {
+    return {
+      success: false,
+      code: "PERSISTENCE_ERROR",
+      retryable: true
+    };
+  }
 
-  const ordersSheet =
-    spreadsheet
-      .getSheetByName(ORDERS_SHEET);
+  const lock = LockService.getScriptLock();
 
-  const itemsSheet =
-    spreadsheet
-      .getSheetByName(ORDER_ITEMS_SHEET);
+  try {
+    lock.waitLock(10000);
 
+    const existingOrders = getOrders();
 
-  const orderHeaders =
-    ordersSheet
-      .getRange(
-        1,
-        1,
-        1,
-        ordersSheet.getLastColumn()
-      )
-      .getValues()[0];
-
-
-  const orderRow = [];
-
-  orderHeaders.forEach(header => {
-
-    if (
-      Object.prototype.hasOwnProperty.call(
-        order,
-        header
-      )
-    ) {
-
-      orderRow.push(
-        order[header]
-      );
-
-    } else {
-
-      orderRow.push("");
-
+    if (hasExistingOrderId(existingOrders, order && order.order_id)) {
+      return {
+        success: false,
+        code: "ORDER_DUPLICATE",
+        retryable: false,
+        order_id: order.order_id
+      };
     }
 
-  });
+    const schemaResult = validateOrderSchema(spreadsheet);
 
+    if (!schemaResult.success) {
+      return {
+        success: false,
+        code: "SCHEMA_ERROR",
+        retryable: false
+      };
+    }
 
-  ordersSheet.appendRow(orderRow);
+    const payloadResult = validateOrderPayload(order, items);
 
+    if (!payloadResult.success) {
+      return {
+        success: false,
+        code: "VALIDATION_ERROR",
+        retryable: false,
+        errors: payloadResult.errors
+      };
+    }
 
-  const itemHeaders =
-    itemsSheet
-      .getRange(
-        1,
-        1,
-        1,
-        itemsSheet.getLastColumn()
-      )
-      .getValues()[0];
+    const ordersSheet = spreadsheet.getSheetByName(ORDERS_SHEET);
+    const itemsSheet = spreadsheet.getSheetByName(ORDER_ITEMS_SHEET);
 
+    if (!ordersSheet || !itemsSheet) {
+      return {
+        success: false,
+        code: "SCHEMA_ERROR",
+        retryable: false
+      };
+    }
 
-  items.forEach(item => {
+    const orderHeaders = getSheetHeaders(ordersSheet);
+    const itemHeaders = getSheetHeaders(itemsSheet);
+    const prepared = buildPersistenceBatch(order, items, orderHeaders, itemHeaders);
 
-    const itemRow = [];
-
-    itemHeaders.forEach(header => {
-
-      if (
-        Object.prototype.hasOwnProperty.call(
-          item,
-          header
-        )
-      ) {
-
-        itemRow.push(
-          item[header]
-        );
-
-      } else {
-
-        itemRow.push("");
-
+    const requests = [
+      {
+        appendCells: {
+          sheetId: ordersSheet.getSheetId(),
+          rows: [{ values: prepared.orderRow.map(toSheetCellValue) }],
+          fields: "*"
+        }
+      },
+      {
+        appendCells: {
+          sheetId: itemsSheet.getSheetId(),
+          rows: prepared.itemRows.map(itemRow => ({ values: itemRow.map(toSheetCellValue) })),
+          fields: "*"
+        }
       }
+    ];
 
-    });
-
-    itemsSheet.appendRow(itemRow);
-
-  });
-
-
-  return {
-    order: order,
-    items: items
-  };
-}
-
-
-function testGetOrders() {
-
-  const orders =
-    getOrders();
-
-  Logger.log(orders);
-
-}
-
-
-function testFindOrderById() {
-
-  const result =
-    findOrderById("TEST-003");
-
-  Logger.log(result);
-
-}
-
-function testSaveOrder() {
-
-  const order = {
-    order_id: "TEST-003",
-    created_at: new Date(),
-    source: "telegram",
-    customerId: "",
-    provider: "telegram",
-    providerId: "1234567890",
-    telegram_username: "",
-    telegram_name: "",
-    customer_name: "Test Customer",
-    phone: "+380000000000",
-    email: "test@example.com",
-    payment_type: "full",
-    payment_method: "card",
-    payment_status: "",
-    order_status: "new",
-    subtotal: 250,
-    total: 250,
-    expires_at: "",
-    paid_at: "",
-    document_url: "",
-    note: ""
-  };
-
-
-  const items = [
-    {
-      order_id: "TEST-003",
-      sku: "W0002",
-      title: "Test Vintage Watch",
-      price: 250,
-      quantity: 1,
-      subtotal: 250
-    }
-  ];
-
-
-  const result =
-    saveOrder(order, items);
-
-
-  Logger.log(result);
-
-}
-
-function testOrdersStructure() {
-
-    const spreadsheet =
-        SpreadsheetApp
-            .getActiveSpreadsheet();
-
-
-    const sheet =
-        spreadsheet
-            .getSheetByName(ORDERS_SHEET);
-
-
-    const lastColumn =
-        sheet.getLastColumn();
-
-
-    const headers =
-        sheet
-            .getRange(
-                1,
-                1,
-                1,
-                lastColumn
-            )
-            .getValues()[0];
-
-
-    Logger.log(
-        "=== ORDERS HEADERS ==="
+    const response = Sheets.Spreadsheets.batchUpdate(
+      { requests: requests },
+      spreadsheet.getId()
     );
 
-
-    headers.forEach(
-        (header, index) => {
-
-            Logger.log(
-                index +
-                " | [" +
-                header +
-                "] | length=" +
-                String(header).length
-            );
-
-        }
-    );
-
-
-    const lastRow =
-        sheet.getLastRow();
-
-
-    if (lastRow < 2) {
-
-        Logger.log(
-            "No order rows found."
-        );
-
-        return;
-
+    if (!response) {
+      return {
+        success: false,
+        code: "PERSISTENCE_ERROR",
+        retryable: true
+      };
     }
 
-
-    const values =
-        sheet
-            .getRange(
-                lastRow,
-                1,
-                1,
-                lastColumn
-            )
-            .getValues()[0];
-
-
-    Logger.log(
-        "=== LAST ORDER ROW ==="
-    );
-
-
-    values.forEach(
-        (value, index) => {
-
-            Logger.log(
-                index +
-                " | header=[" +
-                headers[index] +
-                "] | value=[" +
-                value +
-                "]"
-            );
-
-        }
-    );
-
-}
-
-function testFindDebug() {
-
-    const orders =
-        getOrders();
-
-    Logger.log(
-        "Orders count: " +
-        orders.length
-    );
-
-    orders.forEach(
-        (order, index) => {
-
-            Logger.log(
-                "INDEX=" +
-                index +
-                " | order_id=[" +
-                order.order_id +
-                "] | type=" +
-                typeof order.order_id
-            );
-
-        }
-    );
-
-    const target =
-        "TEST-003";
-
-    Logger.log(
-        "Target=[" +
-        target +
-        "] | type=" +
-        typeof target
-    );
-
-    const found =
-        orders.find(
-            order =>
-                order.order_id === target
-        );
-
-    Logger.log(
-        "FOUND:"
-    );
-
-    Logger.log(found);
-
+    return {
+      success: true,
+      code: "ORDER_CREATED",
+      order: {
+        order_id: order.order_id
+      },
+      items_count: items.length
+    };
+  } catch (error) {
+    return {
+      success: false,
+      code: "PERSISTENCE_ERROR",
+      retryable: true
+    };
+  } finally {
+    lock.releaseLock();
+  }
 }
