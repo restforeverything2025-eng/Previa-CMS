@@ -141,36 +141,103 @@ function testPublishedMediaManifest() {
 
 }
 
+function getGitHubBlobSha(bytes) {
+
+  const header =
+    Utilities.newBlob(
+      "blob " + bytes.length + "\0"
+    ).getBytes();
+
+  const payload =
+    header.concat(bytes);
+
+  const digest =
+    Utilities.computeDigest(
+      Utilities.DigestAlgorithm.SHA_1,
+      payload
+    );
+
+  return digest
+    .map(byte => {
+
+      const value =
+        byte < 0
+          ? byte + 256
+          : byte;
+
+      return (
+        "0" +
+        value.toString(16)
+      ).slice(-2);
+
+    })
+    .join("");
+
+}
+
 function compareMediaManifest() {
 
   const drive =
-  getMediaManifest();
-// Read GitHub repository only once.
-const github =
-  getRepositoryImages();
+    getMediaManifest();
 
-const operations = [];
+  // Read GitHub repository only once.
+  const github =
+    getRepositoryImages();
 
-Object.keys(drive).forEach(sku => {
+  const operations = [];
 
-  const driveFiles =
-    drive[sku];
+  Object.keys(drive).forEach(sku => {
 
-  const githubFiles =
-    github[sku] || [];
+    const driveFiles =
+      drive[sku];
 
-    // Upload
+    const githubFiles =
+      github[sku] || [];
+
+
+    // =====================================================
+    // UPLOAD / UPDATE
+    // =====================================================
 
     driveFiles.forEach(file => {
 
-      const exists =
+      const githubFile =
         githubFiles.find(item =>
-
           item.name === file.name
-
         );
 
-      if (!exists) {
+      // New file
+      if (!githubFile) {
+
+        operations.push({
+
+          action: "upload",
+
+          sku: sku,
+
+          file: file
+
+        });
+
+        return;
+
+      }
+
+
+      // Existing file:
+      // compare actual file content.
+
+      const driveFile =
+        getDriveFileBytes(
+          file.id
+        );
+
+      const driveSha =
+        getGitHubBlobSha(
+          driveFile.bytes
+        );
+
+      if (driveSha !== githubFile.sha) {
 
         operations.push({
 
@@ -186,15 +253,16 @@ Object.keys(drive).forEach(sku => {
 
     });
 
-    // Delete
+
+    // =====================================================
+    // DELETE
+    // =====================================================
 
     githubFiles.forEach(file => {
 
       const exists =
         driveFiles.find(item =>
-
           item.name === file.name
-
         );
 
       if (!exists) {
@@ -263,27 +331,22 @@ function syncMedia() {
   const operations =
     compareMediaManifest();
 
-      let uploaded = 0;
-
-      let deleted = 0;
+  const uploadedFiles = [];
+  const deletedFiles = [];
 
   if (operations.length === 0) {
 
-  Logger.log(
-    "Media already synchronized."
-  );
+    Logger.log(
+      "Media already synchronized."
+    );
 
-  return (
+    return (
+      "Media already synchronized." +
+      "\n\nUploaded: 0" +
+      "\nDeleted: 0"
+    );
 
-    "Uploaded: 0" +
-
-    "\nDeleted: 0" +
-
-    "\n\nMedia already synchronized."
-
-  );
-
-}
+  }
 
   operations.forEach(operation => {
 
@@ -294,13 +357,16 @@ function syncMedia() {
           operation.file.id
         );
 
+      const filePath =
+        operation.sku +
+        "/" +
+        driveFile.name;
+
       publishFile({
 
         fileName:
           "images/" +
-          operation.sku +
-          "/" +
-          driveFile.name,
+          filePath,
 
         bytes:
           driveFile.bytes,
@@ -310,50 +376,38 @@ function syncMedia() {
       },
 
       "Upload image " +
-      operation.sku +
-      "/" +
-      driveFile.name);
+      filePath);
 
-      uploaded++;
+      uploadedFiles.push(filePath);
 
       Logger.log(
-
         "Uploaded: " +
-
-        operation.sku +
-
-        "/" +
-
-        driveFile.name
-
+        filePath
       );
 
     }
 
     if (operation.action === "delete") {
 
+      const filePath =
+        operation.sku +
+        "/" +
+        operation.file.name;
+
       deleteFile(
 
         operation.file.path,
 
         "Delete image " +
-
-        operation.sku +
-
-        "/" +
-
-        operation.file.name
+        filePath
 
       );
 
-      deleted++;
+      deletedFiles.push(filePath);
 
       Logger.log(
-
         "Deleted: " +
-
-        operation.file.path
-
+        filePath
       );
 
     }
@@ -362,25 +416,38 @@ function syncMedia() {
 
   publishMediaManifest();
 
-Logger.log(
+  Logger.log(
+    "Media synchronization completed."
+  );
 
-  "Media synchronization completed."
+  let report =
+    "Media synchronization completed.";
 
-);
+  report +=
+    "\n\nUploaded: " +
+    uploadedFiles.length;
 
-return (
+  if (uploadedFiles.length > 0) {
 
-  "Uploaded: " +
+    report +=
+      "\n  • " +
+      uploadedFiles.join("\n  • ");
 
-  uploaded +
+  }
 
-  "\nDeleted: " +
+  report +=
+    "\n\nDeleted: " +
+    deletedFiles.length;
 
-  deleted +
+  if (deletedFiles.length > 0) {
 
-  "\n\nSynchronization completed successfully."
+    report +=
+      "\n  • " +
+      deletedFiles.join("\n  • ");
 
-);
+  }
+
+  return report;
 
 }
 

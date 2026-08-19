@@ -4,10 +4,10 @@
 # ============================================================
 
 # Node.js tests — never upload to Google Apps Script
-tests/
+**/tests/**
 
 # Local Git repository
-.git/
+.git/**
 
 # Local Git files
 .gitignore
