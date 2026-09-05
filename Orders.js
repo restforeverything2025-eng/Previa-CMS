@@ -113,22 +113,42 @@ function findOrderById(orderId) {
 
 function toSheetCellValue(value) {
   if (value === undefined || value === null) {
-    return { stringValue: "" };
+    return {
+      userEnteredValue: {
+        stringValue: ""
+      }
+    };
   }
 
   if (typeof value === "number" && Number.isFinite(value)) {
-    return { numberValue: value };
+    return {
+      userEnteredValue: {
+        numberValue: value
+      }
+    };
   }
 
   if (typeof value === "boolean") {
-    return { boolValue: value };
+    return {
+      userEnteredValue: {
+        boolValue: value
+      }
+    };
   }
 
   if (value instanceof Date) {
-    return { stringValue: value.toISOString() };
+    return {
+      userEnteredValue: {
+        stringValue: value.toISOString()
+      }
+    };
   }
 
-  return { stringValue: String(value) };
+  return {
+    userEnteredValue: {
+      stringValue: String(value)
+    }
+  };
 }
 
 function saveOrder(order, items = []) {
