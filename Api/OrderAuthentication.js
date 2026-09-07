@@ -47,13 +47,20 @@ function computeOrderAuthSignature(secret, action, timestamp, nonce, payload) {
   ].join("\n");
 
   if (typeof Utilities !== "undefined" && typeof Utilities.computeHmacSha256Signature === "function") {
-    const signatureBytes = Utilities.computeHmacSha256Signature(signingString, effectiveSecret);
+    const signatureBytes = Utilities.computeHmacSha256Signature(
+      signingString,
+      effectiveSecret,
+      Utilities.Charset.UTF_8
+    );
     return bytesToHex(signatureBytes);
   }
 
   if (typeof require === "function") {
     const crypto = require("node:crypto");
-    const signature = crypto.createHmac("sha256", effectiveSecret).update(signingString).digest("hex");
+    const signature = crypto
+      .createHmac("sha256", Buffer.from(effectiveSecret, "utf8"))
+      .update(Buffer.from(signingString, "utf8"))
+      .digest("hex");
     return signature;
   }
 
