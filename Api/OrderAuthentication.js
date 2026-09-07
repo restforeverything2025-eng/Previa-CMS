@@ -80,8 +80,15 @@ function parseTimestamp(value) {
   return null;
 }
 
+function logOrderAuthDiagnostic(reason) {
+  // Diagnostic logging deliberately contains no secret, payload, signature,
+  // customer data, Telegram initData, or other sensitive request contents.
+  Logger.log("PREVIA ORDER AUTH DIAGNOSTIC: " + reason);
+}
+
 function verifyOrderAuthEnvelope(request, nowTimestamp) {
   if (!request || !request.auth || !request.action || !request.payload) {
+    logOrderAuthDiagnostic("missing envelope fields");
     return false;
   }
 
@@ -89,30 +96,36 @@ function verifyOrderAuthEnvelope(request, nowTimestamp) {
   const secret = getOrderAuthSecret();
 
   if (!secret) {
+    logOrderAuthDiagnostic("CMS secret is missing");
     return false;
   }
 
   if (auth.version !== ORDER_AUTH_VERSION) {
+    logOrderAuthDiagnostic("auth version mismatch");
     return false;
   }
 
   if (auth.key_id !== ORDER_AUTH_KEY_ID) {
+    logOrderAuthDiagnostic("auth key_id mismatch");
     return false;
   }
 
   if (!auth.timestamp || !auth.nonce || !auth.signature) {
+    logOrderAuthDiagnostic("auth fields are incomplete");
     return false;
   }
 
   const timestampDate = parseTimestamp(auth.timestamp);
 
   if (!timestampDate) {
+    logOrderAuthDiagnostic("timestamp is invalid");
     return false;
   }
 
   const now = nowTimestamp ? new Date(nowTimestamp) : new Date();
 
   if (Math.abs(now.getTime() - timestampDate.getTime()) > ORDER_AUTH_TOLERANCE_MS) {
+    logOrderAuthDiagnostic("timestamp is outside tolerance");
     return false;
   }
 
@@ -124,7 +137,13 @@ function verifyOrderAuthEnvelope(request, nowTimestamp) {
     request.payload
   );
 
-  return typeof auth.signature === "string" && auth.signature.toLowerCase() === expectedSignature;
+  if (typeof auth.signature !== "string" || auth.signature.toLowerCase() !== expectedSignature) {
+    logOrderAuthDiagnostic("signature mismatch");
+    return false;
+  }
+
+  logOrderAuthDiagnostic("authentication successful");
+  return true;
 }
 
 function buildSignedEnvelope(action, payload, secret, timestamp, nonce) {
