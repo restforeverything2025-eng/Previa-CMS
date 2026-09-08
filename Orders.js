@@ -400,3 +400,12 @@ function saveOrder(order, items = []) {
     lock.releaseLock();
   }
 }
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = {
+    getProductReservationPlan,
+    buildProductReservationRequests,
+    AVAILABLE_PRODUCT_STATUS,
+    RESERVED_PRODUCT_STATUS
+  };
+}
