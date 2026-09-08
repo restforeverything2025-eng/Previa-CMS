@@ -12,6 +12,9 @@
 
 const ORDERS_SHEET = "Orders";
 const ORDER_ITEMS_SHEET = "OrderItems";
+const PRODUCTS_SHEET = "Products";
+const AVAILABLE_PRODUCT_STATUS = "available";
+const RESERVED_PRODUCT_STATUS = "reserved";
 
 function getSheetHeaders(sheet) {
   if (!sheet) {
@@ -151,6 +154,127 @@ function toSheetCellValue(value) {
   };
 }
 
+function getProductReservationPlan(spreadsheet, items) {
+  if (!spreadsheet || typeof spreadsheet.getSheetByName !== "function") {
+    return {
+      success: false,
+      code: "SCHEMA_ERROR",
+      errors: ["Spreadsheet is unavailable."]
+    };
+  }
+
+  const productsSheet = spreadsheet.getSheetByName(PRODUCTS_SHEET);
+
+  if (!productsSheet) {
+    return {
+      success: false,
+      code: "SCHEMA_ERROR",
+      errors: ["Products sheet is missing."]
+    };
+  }
+
+  const data = productsSheet.getDataRange().getValues();
+
+  if (!data || data.length === 0) {
+    return {
+      success: false,
+      code: "SCHEMA_ERROR",
+      errors: ["Products sheet is empty."]
+    };
+  }
+
+  const headers = data[0];
+  const skuIndex = headers.indexOf("sku");
+  const statusIndex = headers.indexOf("status");
+
+  if (skuIndex === -1 || statusIndex === -1) {
+    return {
+      success: false,
+      code: "SCHEMA_ERROR",
+      errors: ["Products sheet must contain sku and status headers."]
+    };
+  }
+
+  const requestedSkus = [];
+  const seenSkus = new Set();
+
+  (Array.isArray(items) ? items : []).forEach(item => {
+    const sku = item && typeof item.sku === "string" ? item.sku.trim() : "";
+
+    if (!sku || seenSkus.has(sku)) {
+      return;
+    }
+
+    seenSkus.add(sku);
+    requestedSkus.push(sku);
+  });
+
+  const errors = [];
+  const reservations = [];
+
+  requestedSkus.forEach(sku => {
+    let found = null;
+
+    for (let rowIndex = 1; rowIndex < data.length; rowIndex += 1) {
+      if (String(data[rowIndex][skuIndex]).trim() === sku) {
+        found = {
+          rowIndex: rowIndex,
+          status: String(data[rowIndex][statusIndex]).trim().toLowerCase()
+        };
+        break;
+      }
+    }
+
+    if (!found) {
+      errors.push("Product not found: " + sku);
+      return;
+    }
+
+    if (found.status !== AVAILABLE_PRODUCT_STATUS) {
+      errors.push("Product is not available: " + sku);
+      return;
+    }
+
+    reservations.push({
+      sku: sku,
+      rowNumber: found.rowIndex + 1,
+      statusColumn: statusIndex + 1,
+      newStatus: RESERVED_PRODUCT_STATUS
+    });
+  });
+
+  if (errors.length) {
+    return {
+      success: false,
+      code: "PRODUCT_NOT_AVAILABLE",
+      errors: errors,
+      reservations: []
+    };
+  }
+
+  return {
+    success: true,
+    code: "PRODUCTS_READY_FOR_RESERVATION",
+    reservations: reservations
+  };
+}
+
+function buildProductReservationRequests(productsSheet, reservations) {
+  return reservations.map(reservation => ({
+    updateCells: {
+      start: {
+        sheetId: productsSheet.getSheetId(),
+        rowIndex: reservation.rowNumber - 1,
+        columnIndex: reservation.statusColumn - 1
+      },
+      rows: [{
+        values: [toSheetCellValue(reservation.newStatus)]
+      }],
+      fields: "userEnteredValue"
+    }
+  }));
+}
+
 function saveOrder(order, items = []) {
   const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
 
@@ -201,12 +325,24 @@ function saveOrder(order, items = []) {
 
     const ordersSheet = spreadsheet.getSheetByName(ORDERS_SHEET);
     const itemsSheet = spreadsheet.getSheetByName(ORDER_ITEMS_SHEET);
+    const productsSheet = spreadsheet.getSheetByName(PRODUCTS_SHEET);
 
-    if (!ordersSheet || !itemsSheet) {
+    if (!ordersSheet || !itemsSheet || !productsSheet) {
       return {
         success: false,
         code: "SCHEMA_ERROR",
         retryable: false
+      };
+    }
+
+    const reservationPlan = getProductReservationPlan(spreadsheet, items);
+
+    if (!reservationPlan.success) {
+      return {
+        success: false,
+        code: reservationPlan.code,
+        retryable: false,
+        errors: reservationPlan.errors
       };
     }
 
@@ -215,6 +351,7 @@ function saveOrder(order, items = []) {
     const prepared = buildPersistenceBatch(order, items, orderHeaders, itemHeaders);
 
     const requests = [
+      ...buildProductReservationRequests(productsSheet, reservationPlan.reservations),
       {
         appendCells: {
           sheetId: ordersSheet.getSheetId(),
@@ -250,7 +387,8 @@ function saveOrder(order, items = []) {
       order: {
         order_id: order.order_id
       },
-      items_count: items.length
+      items_count: items.length,
+      reserved_skus: reservationPlan.reservations.map(item => item.sku)
     };
   } catch (error) {
     return {
