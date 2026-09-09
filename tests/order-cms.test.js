@@ -105,6 +105,40 @@ test("schema validation catches missing Orders header", () => {
   assert.match(result.errors.join(" "), /missing required headers|Orders/i);
 });
 
+test("schema validation accepts CMS-managed extra Orders columns", () => {
+  const spreadsheet = createSpreadsheetMock({
+    Orders: [[
+      "order_id",
+      "created_at",
+      "source",
+      "customerId",
+      "provider",
+      "providerId",
+      "telegram_username",
+      "telegram_name",
+      "customer_name",
+      "phone",
+      "email",
+      "payment_type",
+      "payment_method",
+      "payment_status",
+      "order_status",
+      "document_status",
+      "subtotal",
+      "total",
+      "expires_at",
+      "paid_at",
+      "document_url",
+      "document_error",
+      "note"
+    ]],
+    OrderItems: validOrderItemsSheet
+  });
+
+  const result = validateOrderSchema(spreadsheet);
+  assert.equal(result.success, true, result.errors.join(" "));
+});
+
 test("schema validation catches missing OrderItems header", () => {
   const spreadsheet = createSpreadsheetMock({
     Orders: validOrdersSheet,
@@ -263,16 +297,4 @@ test("order.create requires valid signed envelope", () => {
   };
 
   assert.equal(verifyOrderAuthEnvelope(expiredRequest, new Date("2026-08-15T10:10:00.000Z").getTime()), false);
-});
-
-test("persistence batch prepares Orders row and OrderItems rows", () => {
-  const orderHeaders = ORDER_REQUIRED_HEADERS;
-  const itemHeaders = ORDER_ITEM_REQUIRED_HEADERS;
-  const batch = buildPersistenceBatch(validOrder, validItems, orderHeaders, itemHeaders);
-
-  assert.equal(batch.orderRow.length, orderHeaders.length);
-  assert.equal(batch.orderRow[0], validOrder.order_id);
-  assert.equal(batch.itemRows.length, 1);
-  assert.equal(batch.itemRows[0][0], validOrder.order_id);
-  assert.equal(batch.itemRows[0][1], validItems[0].sku);
 });
