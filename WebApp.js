@@ -97,7 +97,15 @@ function doPost(e) {
       }
 
       if (request.action === "order.create") {
-        return respondJson(OrderEndpoint.create(parsedPayload));
+        const result = OrderEndpoint.create(parsedPayload);
+
+        if (result && result.success && result.order && result.order.order_id) {
+          // Queue only after the order transaction has succeeded.
+          // A queue failure must never turn a successful order into a failed order.
+          markOrderDocumentPending(result.order.order_id);
+        }
+
+        return respondJson(result);
       }
 
       if (request.action === "order.find") {
@@ -138,4 +146,3 @@ function getProductBySku(sku) {
 function getArchivedProductBySku(sku) {
   return findArchivedProductBySku(sku);
 }
-
