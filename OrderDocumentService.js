@@ -11,7 +11,7 @@
 const ORDER_DOCUMENT_STATUS_PENDING = "pending";
 const ORDER_DOCUMENT_STATUS_READY = "ready";
 const ORDER_DOCUMENT_STATUS_ERROR = "error";
-const ORDER_DOCUMENT_BATCH_SIZE = 3;
+const ORDER_DOCUMENT_BATCH_SIZE = 1;
 const ORDER_DOCUMENT_FILENAME_PREFIX = "ORD-";
 const ORDER_DOCUMENT_FILENAME_SUFFIX = ".pdf";
 
@@ -307,7 +307,7 @@ function renderOrderDocument(order, items) {
     ["Статус", translateOrderStatus()]
   ]);
 
-  appendOrderDocumentParagraph(body, "CUSTOMER", {
+  appendOrderDocumentParagraph(body, "КЛІЄНТ", {
     fontSize: 9,
     bold: true,
     spacingBefore: 10,
@@ -325,7 +325,7 @@ function renderOrderDocument(order, items) {
     ["Email", orderDocumentText(order.email)]
   ]);
 
-  appendOrderDocumentParagraph(body, "ITEMS", {
+  appendOrderDocumentParagraph(body, "ТОВАРИ", {
     fontSize: 9,
     bold: true,
     spacingBefore: 10,
@@ -343,7 +343,7 @@ function renderOrderDocument(order, items) {
   totalTable.getCell(0, 0).editAsText().setFontFamily("Arial").setFontSize(9).setBold(true);
   totalTable.getCell(0, 1).editAsText().setFontFamily("Arial").setFontSize(10).setBold(true);
 
-  appendOrderDocumentParagraph(body, "PAYMENT", {
+  appendOrderDocumentParagraph(body, "ОПЛАТА", {
     fontSize: 9,
     bold: true,
     spacingBefore: 10,
@@ -367,7 +367,7 @@ function renderOrderDocument(order, items) {
     appendOrderDocumentKeyValueTable(body, paymentConfig);
   }
 
-  appendOrderDocumentParagraph(body, "PREVIA / Vintage objects with history.", {
+  appendOrderDocumentParagraph(body, "PREVIA / Вінтажні речі з історією.", {
     fontSize: 7,
     spacingBefore: 10,
     spacingAfter: 0,
@@ -510,5 +510,15 @@ function testOrderDocumentWorker() {
 }
 
 function testGenerateOrderPdf(orderId) {
+  return processOrderDocument(orderId);
+}
+
+function retryOrderDocument(orderId) {
+  const result = markOrderDocumentPending(orderId);
+
+  if (!result.success) {
+    return result;
+  }
+
   return processOrderDocument(orderId);
 }
