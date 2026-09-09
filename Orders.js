@@ -15,6 +15,7 @@ const ORDER_ITEMS_SHEET = "OrderItems";
 const PRODUCTS_SHEET = "Products";
 const AVAILABLE_PRODUCT_STATUS = "available";
 const RESERVED_PRODUCT_STATUS = "reserved";
+const ORDER_DOCUMENT_STATUS_PENDING_VALUE = "pending";
 
 function getSheetHeaders(sheet) {
   if (!sheet) {
@@ -348,7 +349,22 @@ function saveOrder(order, items = []) {
 
     const orderHeaders = getSheetHeaders(ordersSheet);
     const itemHeaders = getSheetHeaders(itemsSheet);
-    const prepared = buildPersistenceBatch(order, items, orderHeaders, itemHeaders);
+
+    // Queue the PDF atomically with the order row. This avoids a race/stale
+    // read between the Sheets API batchUpdate and the follow-up queue write.
+    // PDF generation itself remains asynchronous and cannot break the order.
+    const persistedOrder = Object.assign({}, order, {
+      document_url: "",
+      document_status: ORDER_DOCUMENT_STATUS_PENDING_VALUE,
+      document_error: ""
+    });
+
+    const prepared = buildPersistenceBatch(
+      persistedOrder,
+      items,
+      orderHeaders,
+      itemHeaders
+    );
 
     const requests = [
       ...buildProductReservationRequests(productsSheet, reservationPlan.reservations),
@@ -388,7 +404,8 @@ function saveOrder(order, items = []) {
         order_id: order.order_id
       },
       items_count: items.length,
-      reserved_skus: reservationPlan.reservations.map(item => item.sku)
+      reserved_skus: reservationPlan.reservations.map(item => item.sku),
+      document_status: ORDER_DOCUMENT_STATUS_PENDING_VALUE
     };
   } catch (error) {
     return {
