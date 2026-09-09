@@ -131,12 +131,10 @@ function validateOrderSchema(spreadsheet) {
     errors.push("OrderItems first column must be order_id.");
   }
 
-  if (orderHeaders.some((header, index) => index < ORDER_REQUIRED_HEADERS.length && header !== ORDER_REQUIRED_HEADERS[index])) {
-    const mismatched = orderHeaders.filter((header, index) => header !== ORDER_REQUIRED_HEADERS[index]);
-    if (mismatched.length) {
-      errors.push("Orders headers do not match required names and case.");
-    }
-  }
+  // Orders may contain CMS-managed columns (for example document_status
+  // and document_error) in any position. Persistence already maps values
+  // by header name, so requiring the core columns to occupy fixed positions
+  // is unnecessarily strict and breaks when CMS columns are inserted.
 
   if (itemHeaders.some((header, index) => index < ORDER_ITEM_REQUIRED_HEADERS.length && header !== ORDER_ITEM_REQUIRED_HEADERS[index])) {
     const mismatched = itemHeaders.filter((header, index) => header !== ORDER_ITEM_REQUIRED_HEADERS[index]);
