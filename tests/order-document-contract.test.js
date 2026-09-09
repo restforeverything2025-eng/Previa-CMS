@@ -22,7 +22,9 @@ test("order document sources are valid JavaScript", () => {
 
 test("order document uses the configured ORDERS folder and deterministic PDF name", () => {
   assert.match(serviceSource, /config\.orders_folder_id/);
-  assert.match(serviceSource, /ORD-.*\\\.pdf/);
+  assert.match(serviceSource, /ORDER_DOCUMENT_FILENAME_PREFIX = "ORD-"/);
+  assert.match(serviceSource, /ORDER_DOCUMENT_FILENAME_SUFFIX = "\.pdf"/);
+  assert.match(serviceSource, /getOrderDocumentFileName\(orderId\)/);
   assert.match(serviceSource, /getFilesByName/);
   assert.match(serviceSource, /file\.getUrl\(\)/);
 });
