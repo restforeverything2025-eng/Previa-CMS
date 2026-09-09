@@ -22,6 +22,18 @@ function onOpen() {
     .addSeparator()
 
     .addItem(
+      "📄 Process Order PDFs",
+      "processPendingOrderDocuments"
+    )
+
+    .addItem(
+      "⚙ Setup PDF Worker",
+      "setupOrderDocumentWorker"
+    )
+
+    .addSeparator()
+
+    .addItem(
       "🚚 Migration Day",
       "migrateLegacyProducts"
     )
