@@ -102,7 +102,12 @@ function doPost(e) {
         if (result && result.success && result.order && result.order.order_id) {
           // Queue only after the order transaction has succeeded.
           // A queue failure must never turn a successful order into a failed order.
-          markOrderDocumentPending(result.order.order_id);
+          const queueResult = markOrderDocumentPending(result.order.order_id);
+          Logger.log(
+            "PREVIA order document queue result for " +
+            result.order.order_id + ": " +
+            JSON.stringify(queueResult)
+          );
         }
 
         return respondJson(result);
