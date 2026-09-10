@@ -14,6 +14,16 @@ const source = fs.readFileSync(sourcePath, "utf8");
 const sandbox = {
   Logger: {
     log() {}
+  },
+  PropertiesService: {
+    getScriptProperties() {
+      return {
+        getProperty() {
+          return "99";
+        },
+        setProperty() {}
+      };
+    }
   }
 };
 
@@ -56,7 +66,7 @@ assert.strictEqual(
     { public_order_number: "" },
     [{ public_order_number: "VWJ-0000042" }]
   ),
-  "VWJ-0000043"
+  "VWJ-0000100"
 );
 
 assert.strictEqual(
