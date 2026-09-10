@@ -44,6 +44,32 @@ function parsePublicOrderNumber(value) {
   return match ? Number(match[1]) : 0;
 }
 
+function getHighestPublicOrderNumber(orders) {
+  return (Array.isArray(orders) ? orders : []).reduce((highest, order) => {
+    return Math.max(highest, parsePublicOrderNumber(order && order[PUBLIC_ORDER_NUMBER_HEADER]));
+  }, 0);
+}
+
+function getStoredPublicOrderNumber() {
+  return Number(
+    PropertiesService
+      .getScriptProperties()
+      .getProperty(PUBLIC_ORDER_NUMBER_PROPERTY) || 0
+  );
+}
+
+function setLastPublicOrderNumber(number) {
+  const value = Number(number);
+
+  if (!Number.isInteger(value) || value < 0) {
+    throw new Error("Last public order number must be a non-negative integer.");
+  }
+
+  PropertiesService
+    .getScriptProperties()
+    .setProperty(PUBLIC_ORDER_NUMBER_PROPERTY, String(value));
+}
+
 function ensurePublicOrderNumberColumn(sheet) {
   const headers = getSheetHeaders(sheet);
   const existingIndex = headers.indexOf(PUBLIC_ORDER_NUMBER_HEADER);
@@ -57,40 +83,10 @@ function ensurePublicOrderNumberColumn(sheet) {
   return nextColumn - 1;
 }
 
-function getPublicOrderNumberColumnState(sheet) {
-  const values = sheet.getDataRange().getValues();
-  if (!values.length) {
-    throw new Error("Orders sheet is empty.");
-  }
-
-  const headers = values[0];
-  const orderIdColumn = headers.indexOf("order_id");
-  const publicOrderNumberColumn = headers.indexOf(PUBLIC_ORDER_NUMBER_HEADER);
-
-  if (orderIdColumn === -1 || publicOrderNumberColumn === -1) {
-    throw new Error("Orders sheet must contain order_id and public_order_number headers.");
-  }
-
-  return {
-    values: values,
-    orderIdColumn: orderIdColumn,
-    publicOrderNumberColumn: publicOrderNumberColumn
-  };
-}
-
-function getHighestPublicOrderNumber(orders) {
-  return (Array.isArray(orders) ? orders : []).reduce((highest, order) => {
-    return Math.max(highest, parsePublicOrderNumber(order && order[PUBLIC_ORDER_NUMBER_HEADER]));
-  }, 0);
-}
-
 function getNextPublicOrderNumber(orders) {
-  const properties = PropertiesService.getScriptProperties();
-  const storedLast = Number(properties.getProperty(PUBLIC_ORDER_NUMBER_PROPERTY) || 0);
+  const storedLast = getStoredPublicOrderNumber();
   const sheetLast = getHighestPublicOrderNumber(orders);
   const next = Math.max(storedLast, sheetLast) + 1;
-
-  properties.setProperty(PUBLIC_ORDER_NUMBER_PROPERTY, String(next));
 
   return formatPublicOrderNumber(next);
 }
@@ -120,25 +116,38 @@ function writePublicOrderNumber(orderId, publicOrderNumber) {
   sheet.getRange(targetRow, state.publicOrderNumberColumn + 1).setValue(publicOrderNumber);
 }
 
-function ensurePublicOrderNumber(order) {
-  const existing = order && order[PUBLIC_ORDER_NUMBER_HEADER];
-
-  if (parsePublicOrderNumber(existing) > 0) {
-    return String(existing).trim();
+function assignPublicOrderNumber(order, existingOrders) {
+  if (!order || typeof order !== "object") {
+    throw new Error("Order is required for public order number assignment.");
   }
 
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Orders");
-  if (!sheet) {
-    throw new Error("Orders sheet is missing.");
+  const existing = parsePublicOrderNumber(order[PUBLIC_ORDER_NUMBER_HEADER]);
+  if (existing > 0) {
+    return String(order[PUBLIC_ORDER_NUMBER_HEADER]).trim();
   }
 
-  ensurePublicOrderNumberColumn(sheet);
-  const orders = getOrders();
-  const publicOrderNumber = getNextPublicOrderNumber(orders);
+  return getNextPublicOrderNumber(existingOrders);
+}
 
-  writePublicOrderNumber(order.order_id, publicOrderNumber);
+function getPublicOrderNumberColumnState(sheet) {
+  const values = sheet.getDataRange().getValues();
+  if (!values.length) {
+    throw new Error("Orders sheet is empty.");
+  }
 
-  return publicOrderNumber;
+  const headers = values[0];
+  const orderIdColumn = headers.indexOf("order_id");
+  const publicOrderNumberColumn = headers.indexOf(PUBLIC_ORDER_NUMBER_HEADER);
+
+  if (orderIdColumn === -1 || publicOrderNumberColumn === -1) {
+    throw new Error("Orders sheet must contain order_id and public_order_number headers.");
+  }
+
+  return {
+    values: values,
+    orderIdColumn: orderIdColumn,
+    publicOrderNumberColumn: publicOrderNumberColumn
+  };
 }
 
 function getOrderDocumentFileName(publicOrderNumber) {
@@ -476,8 +485,9 @@ function renderOrderDocument(order, items) {
   if (String(currency).toUpperCase() === "EUR") {
     const exchange = getExchangeRate();
     const uahEquivalent = calculateOrderDocumentUahEquivalent(total, exchange.eurToUah);
+    const exchangeSource = orderDocumentText(exchange.source, "Monobank");
 
-    appendOrderDocumentParagraph(body, "Курс Monobank: " + formatOrderDocumentExchangeRate(exchange.eurToUah), {
+    appendOrderDocumentParagraph(body, "Курс " + exchangeSource + ": " + formatOrderDocumentExchangeRate(exchange.eurToUah), {
       fontSize: 8.5,
       bold: false,
       spacingBefore: 5,
@@ -595,6 +605,35 @@ function processOrderDocument(orderId) {
   );
 
   return result;
+}
+
+function ensurePublicOrderNumber(order) {
+  const existing = parsePublicOrderNumber(order && order.public_order_number);
+
+  if (existing > 0) {
+    return String(order.public_order_number).trim();
+  }
+
+  const lock = LockService.getScriptLock();
+
+  try {
+    lock.waitLock(10000);
+
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Orders");
+    if (!sheet) {
+      throw new Error("Orders sheet is missing.");
+    }
+
+    ensurePublicOrderNumberColumn(sheet);
+    const orders = getOrders();
+    const publicOrderNumber = getNextPublicOrderNumber(orders);
+    writePublicOrderNumber(order.order_id, publicOrderNumber);
+    setLastPublicOrderNumber(parsePublicOrderNumber(publicOrderNumber));
+
+    return publicOrderNumber;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function processPendingOrderDocuments() {
