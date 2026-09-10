@@ -61,7 +61,7 @@ assert.strictEqual(
 
 assert.strictEqual(
   sandbox.calculateOrderDocumentUahEquivalent(1390, 52.32),
-  72629
+  72725
 );
 
 assert.strictEqual(
@@ -70,8 +70,8 @@ assert.strictEqual(
 );
 
 assert.strictEqual(
-  sandbox.formatOrderDocumentUah(72629),
-  "≈ ₴ 72 629"
+  sandbox.formatOrderDocumentUah(72725),
+  "≈ ₴ 72 725"
 );
 
 console.log("PASS: order document helper tests");
