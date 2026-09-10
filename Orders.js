@@ -352,7 +352,13 @@ function saveOrder(order, items = []) {
     const orderHeaders = getSheetHeaders(ordersSheet);
     const itemHeaders = getSheetHeaders(itemsSheet);
     const ordersAfterSchema = getOrders();
-    const publicOrderNumber = assignPublicOrderNumber(order, ordersAfterSchema);
+
+    // Historical orders predate the human-facing number. Backfill them first
+    // so the next new order continues the same sequence.
+    backfillMissingPublicOrderNumbers(ordersAfterSchema);
+
+    const refreshedOrders = getOrders();
+    const publicOrderNumber = assignPublicOrderNumber(order, refreshedOrders);
 
     // Queue the PDF atomically with the order row. This avoids a race/stale
     // read between the Sheets API batchUpdate and the follow-up queue write.
