@@ -408,6 +408,8 @@ function saveOrder(order, items = []) {
       };
     }
 
+    setLastPublicOrderNumber(parsePublicOrderNumber(publicOrderNumber));
+
     return {
       success: true,
       code: "ORDER_CREATED",
