@@ -347,13 +347,18 @@ function saveOrder(order, items = []) {
       };
     }
 
+    ensurePublicOrderNumberColumn(ordersSheet);
+
     const orderHeaders = getSheetHeaders(ordersSheet);
     const itemHeaders = getSheetHeaders(itemsSheet);
+    const ordersAfterSchema = getOrders();
+    const publicOrderNumber = assignPublicOrderNumber(order, ordersAfterSchema);
 
     // Queue the PDF atomically with the order row. This avoids a race/stale
     // read between the Sheets API batchUpdate and the follow-up queue write.
     // PDF generation itself remains asynchronous and cannot break the order.
     const persistedOrder = Object.assign({}, order, {
+      public_order_number: publicOrderNumber,
       document_url: "",
       document_status: ORDER_DOCUMENT_STATUS_PENDING_VALUE,
       document_error: ""
@@ -401,7 +406,8 @@ function saveOrder(order, items = []) {
       success: true,
       code: "ORDER_CREATED",
       order: {
-        order_id: order.order_id
+        order_id: order.order_id,
+        public_order_number: publicOrderNumber
       },
       items_count: items.length,
       reserved_skus: reservationPlan.reservations.map(item => item.sku),
