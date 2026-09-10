@@ -615,9 +615,12 @@ function ensurePublicOrderNumber(order) {
   }
 
   const lock = LockService.getScriptLock();
+  const ownsLock = !lock.hasLock();
 
   try {
-    lock.waitLock(10000);
+    if (ownsLock) {
+      lock.waitLock(10000);
+    }
 
     const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Orders");
     if (!sheet) {
@@ -632,7 +635,9 @@ function ensurePublicOrderNumber(order) {
 
     return publicOrderNumber;
   } finally {
-    lock.releaseLock();
+    if (ownsLock) {
+      lock.releaseLock();
+    }
   }
 }
 
