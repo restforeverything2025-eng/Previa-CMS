@@ -12,8 +12,11 @@ const ORDER_DOCUMENT_STATUS_PENDING = "pending";
 const ORDER_DOCUMENT_STATUS_READY = "ready";
 const ORDER_DOCUMENT_STATUS_ERROR = "error";
 const ORDER_DOCUMENT_BATCH_SIZE = 1;
-const ORDER_DOCUMENT_FILENAME_PREFIX = "ORD-";
 const ORDER_DOCUMENT_FILENAME_SUFFIX = ".pdf";
+const PUBLIC_ORDER_NUMBER_HEADER = "public_order_number";
+const PUBLIC_ORDER_NUMBER_PREFIX = "VWJ-";
+const PUBLIC_ORDER_NUMBER_DIGITS = 7;
+const PUBLIC_ORDER_NUMBER_PROPERTY = "PREVIA_LAST_PUBLIC_ORDER_NUMBER";
 
 function getOrdersFolder() {
   const config = getConfig();
@@ -26,13 +29,125 @@ function getOrdersFolder() {
   return DriveApp.getFolderById(String(folderId).trim());
 }
 
-function getOrderDocumentFileName(orderId) {
-  return ORDER_DOCUMENT_FILENAME_PREFIX + String(orderId).trim() + ORDER_DOCUMENT_FILENAME_SUFFIX;
+function formatPublicOrderNumber(number) {
+  const value = Number(number);
+
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error("Public order number must be a positive integer.");
+  }
+
+  return PUBLIC_ORDER_NUMBER_PREFIX + String(value).padStart(PUBLIC_ORDER_NUMBER_DIGITS, "0");
 }
 
-function findOrderDocumentFile(orderId) {
+function parsePublicOrderNumber(value) {
+  const match = String(value || "").trim().match(/^VWJ-(\d{7})$/i);
+  return match ? Number(match[1]) : 0;
+}
+
+function ensurePublicOrderNumberColumn(sheet) {
+  const headers = getSheetHeaders(sheet);
+  const existingIndex = headers.indexOf(PUBLIC_ORDER_NUMBER_HEADER);
+
+  if (existingIndex >= 0) {
+    return existingIndex;
+  }
+
+  const nextColumn = sheet.getLastColumn() + 1;
+  sheet.getRange(1, nextColumn).setValue(PUBLIC_ORDER_NUMBER_HEADER);
+  return nextColumn - 1;
+}
+
+function getPublicOrderNumberColumnState(sheet) {
+  const values = sheet.getDataRange().getValues();
+  if (!values.length) {
+    throw new Error("Orders sheet is empty.");
+  }
+
+  const headers = values[0];
+  const orderIdColumn = headers.indexOf("order_id");
+  const publicOrderNumberColumn = headers.indexOf(PUBLIC_ORDER_NUMBER_HEADER);
+
+  if (orderIdColumn === -1 || publicOrderNumberColumn === -1) {
+    throw new Error("Orders sheet must contain order_id and public_order_number headers.");
+  }
+
+  return {
+    values: values,
+    orderIdColumn: orderIdColumn,
+    publicOrderNumberColumn: publicOrderNumberColumn
+  };
+}
+
+function getHighestPublicOrderNumber(orders) {
+  return (Array.isArray(orders) ? orders : []).reduce((highest, order) => {
+    return Math.max(highest, parsePublicOrderNumber(order && order[PUBLIC_ORDER_NUMBER_HEADER]));
+  }, 0);
+}
+
+function getNextPublicOrderNumber(orders) {
+  const properties = PropertiesService.getScriptProperties();
+  const storedLast = Number(properties.getProperty(PUBLIC_ORDER_NUMBER_PROPERTY) || 0);
+  const sheetLast = getHighestPublicOrderNumber(orders);
+  const next = Math.max(storedLast, sheetLast) + 1;
+
+  properties.setProperty(PUBLIC_ORDER_NUMBER_PROPERTY, String(next));
+
+  return formatPublicOrderNumber(next);
+}
+
+function writePublicOrderNumber(orderId, publicOrderNumber) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Orders");
+
+  if (!sheet) {
+    throw new Error("Orders sheet is missing.");
+  }
+
+  ensurePublicOrderNumberColumn(sheet);
+  const state = getPublicOrderNumberColumnState(sheet);
+  let targetRow = -1;
+
+  for (let rowIndex = 1; rowIndex < state.values.length; rowIndex += 1) {
+    if (String(state.values[rowIndex][state.orderIdColumn]).trim() === String(orderId).trim()) {
+      targetRow = rowIndex + 1;
+      break;
+    }
+  }
+
+  if (targetRow === -1) {
+    throw new Error("Order not found: " + orderId);
+  }
+
+  sheet.getRange(targetRow, state.publicOrderNumberColumn + 1).setValue(publicOrderNumber);
+}
+
+function ensurePublicOrderNumber(order) {
+  const existing = order && order[PUBLIC_ORDER_NUMBER_HEADER];
+
+  if (parsePublicOrderNumber(existing) > 0) {
+    return String(existing).trim();
+  }
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Orders");
+  if (!sheet) {
+    throw new Error("Orders sheet is missing.");
+  }
+
+  ensurePublicOrderNumberColumn(sheet);
+  const orders = getOrders();
+  const publicOrderNumber = getNextPublicOrderNumber(orders);
+
+  writePublicOrderNumber(order.order_id, publicOrderNumber);
+
+  return publicOrderNumber;
+}
+
+function getOrderDocumentFileName(publicOrderNumber) {
+  return String(publicOrderNumber).trim() + ORDER_DOCUMENT_FILENAME_SUFFIX;
+}
+
+function findOrderDocumentFile(publicOrderNumber) {
   const folder = getOrdersFolder();
-  const files = folder.getFilesByName(getOrderDocumentFileName(orderId));
+  const files = folder.getFilesByName(getOrderDocumentFileName(publicOrderNumber));
 
   return files.hasNext() ? files.next() : null;
 }
@@ -49,21 +164,24 @@ function getOrderDocumentColumns(sheet) {
   const documentUrlColumn = headers.indexOf("document_url");
   const documentStatusColumn = headers.indexOf("document_status");
   const documentErrorColumn = headers.indexOf("document_error");
+  const publicOrderNumberColumn = headers.indexOf(PUBLIC_ORDER_NUMBER_HEADER);
 
   if (
     orderIdColumn === -1 ||
     documentUrlColumn === -1 ||
     documentStatusColumn === -1 ||
-    documentErrorColumn === -1
+    documentErrorColumn === -1 ||
+    publicOrderNumberColumn === -1
   ) {
     throw new Error(
-      "Orders sheet must contain order_id, document_url, document_status and document_error headers."
+      "Orders sheet must contain order_id, public_order_number, document_url, document_status and document_error headers."
     );
   }
 
   return {
     values: values,
     orderIdColumn: orderIdColumn,
+    publicOrderNumberColumn: publicOrderNumberColumn,
     documentUrlColumn: documentUrlColumn,
     documentStatusColumn: documentStatusColumn,
     documentErrorColumn: documentErrorColumn
@@ -77,6 +195,7 @@ function updateOrderDocumentStatus(orderId, status, documentUrl, documentError) 
     throw new Error("Orders sheet is missing.");
   }
 
+  ensurePublicOrderNumberColumn(sheet);
   const state = getOrderDocumentColumns(sheet);
   let targetRow = -1;
 
@@ -136,6 +255,21 @@ function formatOrderDocumentMoney(value, currency) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   }) + " " + symbol;
+}
+
+function formatOrderDocumentExchangeRate(value) {
+  return orderDocumentNumber(value).toLocaleString("uk-UA", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
+function calculateOrderDocumentUahEquivalent(total, rate) {
+  return Math.round(orderDocumentNumber(total) * orderDocumentNumber(rate));
+}
+
+function formatOrderDocumentUah(value) {
+  return "≈ ₴ " + orderDocumentNumber(value).toLocaleString("uk-UA");
 }
 
 function translatePaymentMethod(value) {
@@ -269,12 +403,15 @@ function getOrderPaymentConfig() {
 }
 
 function renderOrderDocument(order, items) {
-  const orderId = orderDocumentText(order.order_id, "ORDER");
+  const publicOrderNumber = orderDocumentText(order.public_order_number, "ORDER");
   const currency = order.currency || (items[0] && items[0].currency) || "EUR";
-  const document = DocumentApp.create("PREVIA " + getOrderDocumentFileName(orderId).replace(".pdf", ""));
+  const total = order.total !== undefined && order.total !== ""
+    ? order.total
+    : order.subtotal;
+  const document = DocumentApp.create("PREVIA " + getOrderDocumentFileName(publicOrderNumber).replace(".pdf", ""));
   const body = document.getBody();
 
-  // A4 in points: 595 x 842. Compact margins keep the approved one-page layout stable.
+  // A4 in points. Compact margins keep the approved one-page layout stable.
   body.setPageWidth(595);
   body.setPageHeight(842);
   body.setMarginTop(28);
@@ -285,21 +422,18 @@ function renderOrderDocument(order, items) {
   appendOrderDocumentParagraph(body, "PREVIA", {
     fontSize: 18,
     bold: true,
+    alignment: DocumentApp.HorizontalAlignment.CENTER,
     spacingAfter: 0
   });
-  appendOrderDocumentParagraph(body, "VINTAGE SHOP", {
+  appendOrderDocumentParagraph(body, "Vintage Watches & Jewellery", {
     fontSize: 8,
-    spacingAfter: 12
+    alignment: DocumentApp.HorizontalAlignment.CENTER,
+    spacingAfter: 18
   });
-  appendOrderDocumentParagraph(body, "ORDER", {
+  appendOrderDocumentParagraph(body, "ORDER : " + publicOrderNumber, {
     fontSize: 11,
     bold: true,
-    spacingAfter: 1
-  });
-  appendOrderDocumentParagraph(body, orderId, {
-    fontSize: 12,
-    bold: true,
-    spacingAfter: 8
+    spacingAfter: 10
   });
 
   appendOrderDocumentKeyValueTable(body, [
@@ -334,14 +468,28 @@ function renderOrderDocument(order, items) {
 
   appendOrderItemsTable(body, Array.isArray(items) ? items : [], currency);
 
-  const total = order.total !== undefined && order.total !== ""
-    ? order.total
-    : order.subtotal;
-
   const totalTable = body.appendTable([["ВСЬОГО", formatOrderDocumentMoney(total, currency)]]);
   totalTable.setBorderColor("#bdbdbd");
   totalTable.getCell(0, 0).editAsText().setFontFamily("Arial").setFontSize(9).setBold(true);
   totalTable.getCell(0, 1).editAsText().setFontFamily("Arial").setFontSize(10).setBold(true);
+
+  if (String(currency).toUpperCase() === "EUR") {
+    const exchange = getExchangeRate();
+    const uahEquivalent = calculateOrderDocumentUahEquivalent(total, exchange.eurToUah);
+
+    appendOrderDocumentParagraph(body, "Курс Monobank: " + formatOrderDocumentExchangeRate(exchange.eurToUah), {
+      fontSize: 8.5,
+      bold: false,
+      spacingBefore: 5,
+      spacingAfter: 2
+    });
+    appendOrderDocumentParagraph(body, "Еквівалент: " + formatOrderDocumentUah(uahEquivalent), {
+      fontSize: 8.5,
+      bold: true,
+      spacingBefore: 0,
+      spacingAfter: 0
+    });
+  }
 
   appendOrderDocumentParagraph(body, "ОПЛАТА", {
     fontSize: 9,
@@ -367,9 +515,9 @@ function renderOrderDocument(order, items) {
     appendOrderDocumentKeyValueTable(body, paymentConfig);
   }
 
-  appendOrderDocumentParagraph(body, "PREVIA / Вінтажні речі з історією.", {
-    fontSize: 7,
-    spacingBefore: 10,
+  appendOrderDocumentParagraph(body, "Вінтажні речі з історією.", {
+    fontSize: 8,
+    spacingBefore: 12,
     spacingAfter: 0,
     alignment: DocumentApp.HorizontalAlignment.CENTER
   });
@@ -380,12 +528,18 @@ function renderOrderDocument(order, items) {
 
 function createOrderPdf(order, items) {
   const orderId = orderDocumentText(order.order_id, "");
+  const publicOrderNumber = orderDocumentText(order.public_order_number, "");
+
   if (!orderId) {
     throw new Error("Order ID is required for PDF generation.");
   }
 
+  if (!publicOrderNumber) {
+    throw new Error("Public order number is required for PDF generation.");
+  }
+
   const folder = getOrdersFolder();
-  const existingFile = findOrderDocumentFile(orderId);
+  const existingFile = findOrderDocumentFile(publicOrderNumber);
 
   if (existingFile) {
     return {
@@ -401,7 +555,7 @@ function createOrderPdf(order, items) {
   try {
     temporaryDocumentId = renderOrderDocument(order, items);
     const temporaryDocument = DocumentApp.openById(temporaryDocumentId);
-    const pdfBlob = temporaryDocument.getAs(MimeType.PDF).setName(getOrderDocumentFileName(orderId));
+    const pdfBlob = temporaryDocument.getAs(MimeType.PDF).setName(getOrderDocumentFileName(publicOrderNumber));
     const file = folder.createFile(pdfBlob);
 
     return {
@@ -427,6 +581,9 @@ function processOrderDocument(orderId) {
   if (!found || !found.order) {
     throw new Error("Order not found: " + orderId);
   }
+
+  const publicOrderNumber = ensurePublicOrderNumber(found.order);
+  found.order.public_order_number = publicOrderNumber;
 
   const result = createOrderPdf(found.order, found.items || []);
 
@@ -458,6 +615,7 @@ function processPendingOrderDocuments() {
         const result = processOrderDocument(order.order_id);
         results.push({
           order_id: order.order_id,
+          public_order_number: order.public_order_number || "",
           success: true,
           document_url: result.fileUrl
         });
@@ -503,6 +661,23 @@ function setupOrderDocumentWorker() {
     .create();
 
   Logger.log("PREVIA order document worker scheduled every 5 minutes.");
+}
+
+function testPublicOrderNumberFormatting() {
+  const samples = [1, 12, 1234567];
+  const result = samples.map(formatPublicOrderNumber);
+  Logger.log(JSON.stringify(result));
+  return result;
+}
+
+function testOrderDocumentExchangeRateCalculation() {
+  const total = 1390;
+  const rate = 52.32;
+  const equivalent = calculateOrderDocumentUahEquivalent(total, rate);
+  Logger.log("Total: " + total + " EUR");
+  Logger.log("Rate: " + formatOrderDocumentExchangeRate(rate));
+  Logger.log("Equivalent: " + formatOrderDocumentUah(equivalent));
+  return equivalent;
 }
 
 function testOrderDocumentWorker() {
