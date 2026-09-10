@@ -81,7 +81,7 @@ assert.strictEqual(
 
 assert.strictEqual(
   sandbox.formatOrderDocumentUah(72725),
-  "≈ ₴ 72 725"
+  "≈ ₴ 72\u00A0725"
 );
 
 console.log("PASS: order document helper tests");
