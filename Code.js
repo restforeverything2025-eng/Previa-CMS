@@ -31,6 +31,11 @@ function onOpen() {
       "setupOrderDocumentWorker"
     )
 
+    .addItem(
+      "⚙ Setup Catalog Worker",
+      "setupCatalogPublicationWorker"
+    )
+
     .addSeparator()
 
     .addItem(
@@ -192,7 +197,6 @@ function testReimportProducts(){
       category:"Годинники",
       brand:"Previa",
       name:"Second Test",
-      price:"250 €",
       status:"available",
       dateAdded:"2026-07-01",
       description:"Second"
