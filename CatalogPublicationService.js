@@ -13,13 +13,7 @@ const CATALOG_PUBLICATION_PENDING_VALUE = "1";
 const CATALOG_PUBLICATION_WORKER_INTERVAL_MINUTES = 5;
 
 function markCatalogPublicationPending() {
-  const lock = LockService.getScriptLock();
-  let ownsLock = false;
-
   try {
-    lock.waitLock(10000);
-    ownsLock = true;
-
     PropertiesService
       .getScriptProperties()
       .setProperty(
@@ -46,10 +40,6 @@ function markCatalogPublicationPending() {
       code: "CATALOG_PUBLICATION_QUEUE_ERROR",
       message: message
     };
-  } finally {
-    if (ownsLock) {
-      lock.releaseLock();
-    }
   }
 }
 
