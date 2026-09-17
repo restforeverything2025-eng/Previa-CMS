@@ -100,13 +100,22 @@ function doPost(e) {
         const result = OrderEndpoint.create(parsedPayload);
 
         if (result && result.success && result.order && result.order.order_id) {
-          // Queue only after the order transaction has succeeded.
-          // A queue failure must never turn a successful order into a failed order.
-          const queueResult = markOrderDocumentPending(result.order.order_id);
+          const orderId = result.order.order_id;
+
+          // Queue follow-up work only after the order transaction has succeeded.
+          // Queue failures must never turn a successful order into a failed order.
+          const documentQueueResult = markOrderDocumentPending(orderId);
           Logger.log(
             "PREVIA order document queue result for " +
-            result.order.order_id + ": " +
-            JSON.stringify(queueResult)
+            orderId + ": " +
+            JSON.stringify(documentQueueResult)
+          );
+
+          const catalogQueueResult = markCatalogPublicationPending();
+          Logger.log(
+            "PREVIA catalog publication queue result for " +
+            orderId + ": " +
+            JSON.stringify(catalogQueueResult)
           );
         }
 
