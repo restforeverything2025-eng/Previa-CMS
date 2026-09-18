@@ -20,11 +20,14 @@ function getGitHubConfig() {
 }
 
 function testGitHubConfig() {
-
   const github = getGitHubConfig();
 
-  Logger.log(github);
-
+  Logger.log({
+    owner: github.owner,
+    repo: github.repo,
+    branch: github.branch,
+    token: github.token ? "[REDACTED]" : "[MISSING]"
+  });
 }
 
 function testGitHubConnection() {
