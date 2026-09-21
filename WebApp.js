@@ -22,6 +22,42 @@ function parsePostBody(rawBody) {
   }
 }
 
+function getInternalHmacPayload(request) {
+  if (!request || !request.payload || !request.auth) {
+    return null;
+  }
+
+  if (!verifyInternalHmacEnvelope(request, Date.now())) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(request.payload);
+  } catch (error) {
+    return null;
+  }
+}
+
+function requireInternalHmacPayload(request) {
+  const payload = getInternalHmacPayload(request);
+
+  if (!payload || typeof payload !== "object") {
+    return {
+      valid: false,
+      response: respondJson({
+        success: false,
+        code: "AUTHENTICATION_ERROR",
+        retryable: false
+      })
+    };
+  }
+
+  return {
+    valid: true,
+    payload: payload
+  };
+}
+
 function doPost(e) {
   try {
     const rawBody = e && e.postData && e.postData.contents ? e.postData.contents : "";
@@ -38,28 +74,42 @@ function doPost(e) {
 
     Logger.log("PREVIA API ACTION: " + request.action);
 
-    if (request.action === "customer.getOrCreate") {
-      const customer = CustomerEndpoint.handle(request.data);
-      return respondJson({ success: true, customer: customer });
-    }
+    if (
+      request.action === "customer.getOrCreate" ||
+      request.action === "customer.find" ||
+      request.action === "favorites.get" ||
+      request.action === "favorites.add" ||
+      request.action === "favorites.remove"
+    ) {
+      const internalRequest = requireInternalHmacPayload(request);
 
-    if (request.action === "customer.find") {
-      const customer = CustomerEndpoint.find(request.data);
-      return respondJson({ success: true, customer: customer });
-    }
+      if (!internalRequest.valid) {
+        return internalRequest.response;
+      }
 
-    if (request.action === "favorites.get") {
-      const favorites = FavoritesEndpoint.getFavorites(request.data);
-      return respondJson({ success: true, favorites: favorites });
-    }
+      const data = internalRequest.payload;
 
-    if (request.action === "favorites.add") {
-      const favorite = FavoritesEndpoint.addFavorite(request.data);
-      return respondJson({ success: true, favorite: favorite });
-    }
+      if (request.action === "customer.getOrCreate") {
+        const customer = CustomerEndpoint.handle(data);
+        return respondJson({ success: true, customer: customer });
+      }
 
-    if (request.action === "favorites.remove") {
-      const removed = FavoritesEndpoint.removeFavorite(request.data);
+      if (request.action === "customer.find") {
+        const customer = CustomerEndpoint.find(data);
+        return respondJson({ success: true, customer: customer });
+      }
+
+      if (request.action === "favorites.get") {
+        const favorites = FavoritesEndpoint.getFavorites(data);
+        return respondJson({ success: true, favorites: favorites });
+      }
+
+      if (request.action === "favorites.add") {
+        const favorite = FavoritesEndpoint.addFavorite(data);
+        return respondJson({ success: true, favorite: favorite });
+      }
+
+      const removed = FavoritesEndpoint.removeFavorite(data);
       return respondJson({ success: true, removed: removed });
     }
 
