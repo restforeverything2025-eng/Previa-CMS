@@ -134,6 +134,10 @@ function verifyOrderAuthEnvelope(request, nowTimestamp) {
   return typeof auth.signature === "string" && auth.signature.toLowerCase() === expectedSignature;
 }
 
+function verifyInternalHmacEnvelope(request, nowTimestamp) {
+  return verifyOrderAuthEnvelope(request, nowTimestamp);
+}
+
 function buildSignedEnvelope(action, payload, secret, timestamp, nonce) {
   const effectivePayload = typeof payload === "string" ? payload : JSON.stringify(payload);
   const effectiveSecret = normalizeSecretValue(secret);
@@ -164,6 +168,7 @@ if (typeof module !== "undefined" && module.exports) {
     computeOrderAuthSignature,
     parseTimestamp,
     verifyOrderAuthEnvelope,
+    verifyInternalHmacEnvelope,
     buildSignedEnvelope
   };
 }
