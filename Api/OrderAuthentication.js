@@ -20,17 +20,6 @@ function normalizeSecretValue(secret) {
   return typeof secret === "string" ? secret : "";
 }
 
-function getOrderAuthSecret() {
-  if (typeof PropertiesService !== "undefined" && PropertiesService.getScriptProperties) {
-    const scriptProperties = PropertiesService.getScriptProperties();
-    if (scriptProperties && typeof scriptProperties.getProperty === "function") {
-      return normalizeSecretValue(scriptProperties.getProperty(ORDER_AUTH_SECRET_KEY));
-    }
-  }
-
-  return "";
-}
-
 function computeOrderAuthSignature(secret, action, timestamp, nonce, payload) {
   const effectiveSecret = normalizeSecretValue(secret);
 
@@ -87,7 +76,7 @@ function parseTimestamp(value) {
   return null;
 }
 
-function verifyOrderAuthEnvelope(request, nowTimestamp) {
+function verifyCoreAuthEnvelope(request, nowTimestamp) {
   if (!request || !request.auth || !request.action || !request.payload) {
     return false;
   }
@@ -134,6 +123,10 @@ function verifyOrderAuthEnvelope(request, nowTimestamp) {
   return typeof auth.signature === "string" && auth.signature.toLowerCase() === expectedSignature;
 }
 
+function verifyOrderAuthEnvelope(request, nowTimestamp) {
+  return verifyCoreAuthEnvelope(request, nowTimestamp);
+}
+
 function buildSignedEnvelope(action, payload, secret, timestamp, nonce) {
   const effectivePayload = typeof payload === "string" ? payload : JSON.stringify(payload);
   const effectiveSecret = normalizeSecretValue(secret);
@@ -163,6 +156,7 @@ if (typeof module !== "undefined" && module.exports) {
     getOrderAuthSecret,
     computeOrderAuthSignature,
     parseTimestamp,
+    verifyCoreAuthEnvelope,
     verifyOrderAuthEnvelope,
     buildSignedEnvelope
   };
