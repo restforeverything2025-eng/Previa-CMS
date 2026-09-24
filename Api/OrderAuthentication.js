@@ -20,6 +20,17 @@ function normalizeSecretValue(secret) {
   return typeof secret === "string" ? secret : "";
 }
 
+function getOrderAuthSecret() {
+  if (typeof PropertiesService !== "undefined" && PropertiesService.getScriptProperties) {
+    const scriptProperties = PropertiesService.getScriptProperties();
+    if (scriptProperties && typeof scriptProperties.getProperty === "function") {
+      return normalizeSecretValue(scriptProperties.getProperty(ORDER_AUTH_SECRET_KEY));
+    }
+  }
+
+  return "";
+}
+
 function computeOrderAuthSignature(secret, action, timestamp, nonce, payload) {
   const effectiveSecret = normalizeSecretValue(secret);
 
