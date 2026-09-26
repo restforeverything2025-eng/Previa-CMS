@@ -61,6 +61,60 @@ const CustomerRepository = (() => {
 
     }
 
+    function findById(customerId) {
+
+    const sheet =
+        getSheet();
+
+    const values =
+        sheet.getDataRange().getValues();
+
+    for (
+        let row = 1;
+        row < values.length;
+        row++
+    ) {
+
+        if (
+            String(values[row][0]) ===
+            String(customerId)
+        ) {
+
+            return {
+
+                customerId:
+                    values[row][0],
+
+                provider:
+                    values[row][1],
+
+                providerId:
+                    String(values[row][2]),
+
+                displayName:
+                    values[row][3],
+
+                username:
+                    values[row][4],
+
+                createdAt:
+                    values[row][5],
+
+                updatedAt:
+                    values[row][6],
+
+                status:
+                    values[row][7]
+
+            };
+
+        }
+
+    }
+
+    return null;
+
+    }
 
     function findByProvider(provider, providerId) {
 
@@ -225,6 +279,8 @@ const CustomerRepository = (() => {
     return {
 
     getSheet,
+
+    findById,
 
     findByProvider,
 

@@ -22,6 +22,37 @@ function parsePostBody(rawBody) {
   }
 }
 
+function parseVerifiedCorePayload(request) {
+  const hasHmacEnvelope = Boolean(
+    request &&
+    request.payload &&
+    request.auth
+  );
+
+  if (!hasHmacEnvelope) {
+    const error = new Error("Authenticated Core envelope is required.");
+    error.code = "AUTHENTICATION_ERROR";
+    error.retryable = false;
+    throw error;
+  }
+
+  if (!verifyCoreAuthEnvelope(request, Date.now())) {
+    const error = new Error("Core HMAC authentication failed.");
+    error.code = "AUTHENTICATION_ERROR";
+    error.retryable = false;
+    throw error;
+  }
+
+  try {
+    return JSON.parse(request.payload);
+  } catch (error) {
+    const parseError = new Error("Core payload is invalid JSON.");
+    parseError.code = "AUTHENTICATION_ERROR";
+    parseError.retryable = false;
+    throw parseError;
+  }
+}
+
 function doPost(e) {
   try {
     const rawBody = e && e.postData && e.postData.contents ? e.postData.contents : "";
@@ -38,29 +69,39 @@ function doPost(e) {
 
     Logger.log("PREVIA API ACTION: " + request.action);
 
-    if (request.action === "customer.getOrCreate") {
-      const customer = CustomerEndpoint.handle(request.data);
-      return respondJson({ success: true, customer: customer });
-    }
+    if (
+      request.action === "customer.getOrCreate" ||
+      request.action === "customer.find" ||
+      request.action === "favorites.get" ||
+      request.action === "favorites.add" ||
+      request.action === "favorites.remove"
+    ) {
+      const parsedPayload = parseVerifiedCorePayload(request);
 
-    if (request.action === "customer.find") {
-      const customer = CustomerEndpoint.find(request.data);
-      return respondJson({ success: true, customer: customer });
-    }
+      if (request.action === "customer.getOrCreate") {
+        const customer = CustomerEndpoint.handle(parsedPayload);
+        return respondJson({ success: true, customer: customer });
+      }
 
-    if (request.action === "favorites.get") {
-      const favorites = FavoritesEndpoint.getFavorites(request.data);
-      return respondJson({ success: true, favorites: favorites });
-    }
+      if (request.action === "customer.find") {
+        const customer = CustomerEndpoint.find(parsedPayload);
+        return respondJson({ success: true, customer: customer });
+      }
 
-    if (request.action === "favorites.add") {
-      const favorite = FavoritesEndpoint.addFavorite(request.data);
-      return respondJson({ success: true, favorite: favorite });
-    }
+      if (request.action === "favorites.get") {
+        const favorites = FavoritesEndpoint.getFavorites(parsedPayload);
+        return respondJson({ success: true, favorites: favorites });
+      }
 
-    if (request.action === "favorites.remove") {
-      const removed = FavoritesEndpoint.removeFavorite(request.data);
-      return respondJson({ success: true, removed: removed });
+      if (request.action === "favorites.add") {
+        const favorite = FavoritesEndpoint.addFavorite(parsedPayload);
+        return respondJson({ success: true, favorite: favorite });
+      }
+
+      if (request.action === "favorites.remove") {
+        const removed = FavoritesEndpoint.removeFavorite(parsedPayload);
+        return respondJson({ success: true, removed: removed });
+      }
     }
 
     if (request.action === "order.create" || request.action === "order.find") {
@@ -136,8 +177,8 @@ function doPost(e) {
   } catch (error) {
     return respondJson({
       success: false,
-      code: "PERSISTENCE_ERROR",
-      retryable: true
+      code: error.code || "PERSISTENCE_ERROR",
+      retryable: error.retryable || error.code === "PERSISTENCE_ERROR"
     });
   }
 }

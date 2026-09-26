@@ -19,7 +19,9 @@ const CustomerService = (() => {
 
     function findById(id) {
 
-    }
+    return CustomerRepository.findById(id);
+
+}
 
     function findByProvider(provider, providerId) {
 
