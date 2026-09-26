@@ -19,6 +19,20 @@ const CustomerAPI = (() => {
 
     /*
     =========================================
+    Find existing Customer by ID
+    =========================================
+    */
+
+    function findCustomerById(customerId) {
+
+    return CustomerService.findById(
+        customerId
+    );
+
+    }
+
+    /*
+    =========================================
     Find existing Customer
     =========================================
     */
@@ -65,6 +79,8 @@ const CustomerAPI = (() => {
 
     return {
 
+        findCustomerById,
+
         findCustomer,
 
         getOrCreateCustomer
@@ -72,4 +88,3 @@ const CustomerAPI = (() => {
     };
 
 })();
-

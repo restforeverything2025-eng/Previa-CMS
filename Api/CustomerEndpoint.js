@@ -26,24 +26,44 @@ const CustomerEndpoint = (() => {
 
     function find(data) {
 
-        if (!data) {
+    if (!data) {
 
-            throw new Error(
-                "Customer request data is required."
-            );
+        throw new Error(
+            "Customer request data is required."
+        );
 
-        }
+    }
 
-        if (
-            data.provider === undefined ||
-            data.providerId === undefined
-        ) {
 
-            throw new Error(
-                "Customer request is missing required fields."
-            );
+    /*
+    =========================================
+    Find by Customer ID
+    =========================================
+    */
 
-        }
+    if (
+        data.customerId !== undefined &&
+        data.customerId !== null &&
+        String(data.customerId).trim()
+    ) {
+
+        return CustomerAPI.findCustomerById(
+            data.customerId
+        );
+
+    }
+
+
+    /*
+    =========================================
+    Find by Provider
+    =========================================
+    */
+
+    if (
+        data.provider !== undefined &&
+        data.providerId !== undefined
+    ) {
 
         return CustomerAPI.findCustomer({
 
@@ -57,6 +77,12 @@ const CustomerEndpoint = (() => {
 
     }
 
+
+    throw new Error(
+        "Customer request is missing required fields."
+    );
+
+}
 
     /*
     =========================================
