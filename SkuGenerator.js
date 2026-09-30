@@ -51,6 +51,70 @@ function assignSku(products) {
 
     }
 
+    if (
+    product.category ===
+    "Сумки"
+    ) {
+
+    counters.B++;
+
+    product.sku =
+        "B" +
+        Utilities.formatString(
+            "%04d",
+            counters.B
+        );
+
+    }
+
+    if (
+    product.category ===
+    "Окуляри"
+    ) {
+
+    counters.G++;
+
+    product.sku =
+        "G" +
+        Utilities.formatString(
+            "%04d",
+            counters.G
+        );
+
+    }
+
+    if (
+    product.category ===
+    "Одяг"
+    ) {
+
+    counters.A++;
+
+    product.sku =
+        "A" +
+        Utilities.formatString(
+            "%04d",
+            counters.A
+        );
+
+    }
+
+    if (
+    product.category ===
+    "Декор"
+    ) {
+
+    counters.D++;
+
+    product.sku =
+        "D" +
+        Utilities.formatString(
+            "%04d",
+            counters.D
+        );
+
+    }
+
   });
 
 }
@@ -61,9 +125,17 @@ function getSkuCounters(products) {
 
     W: 0,
 
-    J: 0
+    J: 0,
 
-  };
+    B: 0,
+
+    G: 0,
+
+    A: 0,
+
+    D: 0
+
+};
 
   products.forEach(product => {
 
@@ -99,6 +171,42 @@ function getSkuCounters(products) {
       counters.J = number;
 
     }
+
+    if (
+      prefix === "B" &&
+      number > counters.B
+    ) {
+
+      counters.B = number;
+
+    }
+
+    if (
+      prefix === "G" &&
+      number > counters.G
+   ) {
+
+      counters.G = number;
+
+   }
+
+    if (
+      prefix === "A" &&
+      number > counters.A
+   ) {
+
+      counters.A = number;
+
+   }
+
+    if (
+      prefix === "D" &&
+      number > counters.D
+   ) {
+
+      counters.D = number;
+
+   }
 
   });
 
