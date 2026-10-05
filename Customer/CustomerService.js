@@ -12,6 +12,7 @@ Responsibility:
 - Create customers.
 - Update customer information.
 - Remain independent from authentication providers.
+- Guarantee atomic Customer get-or-create operations.
 ==================================================
 */
 
@@ -19,151 +20,222 @@ const CustomerService = (() => {
 
     function findById(id) {
 
-    return CustomerRepository.findById(id);
-
-}
-
-    function findByProvider(provider, providerId) {
-
-    return CustomerRepository.findByProvider(
-
-        provider,
-
-        providerId
-
-    );
-
-}
-
-    function generateCustomerId() {
-
-    const customers =
-        CustomerRepository.getAll();
-
-    const nextNumber =
-        customers.length + 1;
-
-    return "C" +
-        String(nextNumber).padStart(6, "0");
-
-}
-
-    function getOrCreateCustomer(data) {
-
-    const existingCustomer =
-        findByProvider(
-            data.provider,
-            data.providerId
-        );
-
-
-    /*
-    =========================================
-    Existing Customer
-    =========================================
-    */
-
-    if (existingCustomer) {
-
-        const username =
-            data.username || "";
-
-        if (
-            existingCustomer.username !== username
-        ) {
-
-            const updatedCustomer =
-                CustomerModel.create({
-
-                    customerId:
-                        existingCustomer.customerId,
-
-                    provider:
-                        existingCustomer.provider,
-
-                    providerId:
-                        existingCustomer.providerId,
-
-                    displayName:
-                        existingCustomer.displayName,
-
-                    username:
-                        username,
-
-                    createdAt:
-                        existingCustomer.createdAt,
-
-                    updatedAt:
-                        new Date(),
-
-                    status:
-                        existingCustomer.status
-
-                });
-
-            CustomerRepository.update(
-                updatedCustomer
-            );
-
-            return updatedCustomer;
-
-        }
-
-        return existingCustomer;
+        return CustomerRepository.findById(id);
 
     }
 
 
-    /*
-    =========================================
-    New Customer
-    =========================================
-    */
+    function findByProvider(provider, providerId) {
 
-    const now = new Date();
+        return CustomerRepository.findByProvider(
 
-    const customer =
-        CustomerModel.create({
+            provider,
 
-            customerId:
-                generateCustomerId(),
+            providerId
 
-            provider:
-                data.provider,
+        );
 
-            providerId:
-                data.providerId,
+    }
 
-            displayName:
-                data.displayName,
 
-            username:
-                data.username || "",
+    function generateCustomerId() {
 
-            createdAt:
-                now,
+        const customers =
+            CustomerRepository.getAll();
 
-            updatedAt:
-                now,
+        let maxNumber = 0;
 
-            status:
-                "active"
+        customers.forEach(row => {
+
+            const customerId =
+                row && row[0] !== undefined
+                    ? String(row[0])
+                    : "";
+
+            const match =
+                customerId.match(/^C(\d+)$/);
+
+            if (!match) {
+
+                return;
+
+            }
+
+            const number =
+                Number(match[1]);
+
+            if (
+                Number.isInteger(number) &&
+                number > maxNumber
+            ) {
+
+                maxNumber = number;
+
+            }
 
         });
 
-    CustomerRepository.create(customer);
+        const nextNumber =
+            maxNumber + 1;
 
-    return customer;
+        return "C" +
+            String(nextNumber).padStart(6, "0");
 
-}
+    }
+
+
+    function getOrCreateCustomer(data) {
+
+        const lock =
+            LockService.getScriptLock();
+
+        let lockAcquired = false;
+
+        try {
+
+            /*
+            =========================================
+            Customer creation is a single transaction.
+            The lock MUST cover:
+            find → generate ID → create
+            =========================================
+            */
+
+            lock.waitLock(30000);
+
+            lockAcquired = true;
+
+
+            const existingCustomer =
+                findByProvider(
+                    data.provider,
+                    data.providerId
+                );
+
+
+            /*
+            =========================================
+            Existing Customer
+            =========================================
+            */
+
+            if (existingCustomer) {
+
+                const username =
+                    data.username || "";
+
+                if (
+                    existingCustomer.username !== username
+                ) {
+
+                    const updatedCustomer =
+                        CustomerModel.create({
+
+                            customerId:
+                                existingCustomer.customerId,
+
+                            provider:
+                                existingCustomer.provider,
+
+                            providerId:
+                                existingCustomer.providerId,
+
+                            displayName:
+                                existingCustomer.displayName,
+
+                            username:
+                                username,
+
+                            createdAt:
+                                existingCustomer.createdAt,
+
+                            updatedAt:
+                                new Date(),
+
+                            status:
+                                existingCustomer.status
+
+                        });
+
+                    CustomerRepository.update(
+                        updatedCustomer
+                    );
+
+                    return updatedCustomer;
+
+                }
+
+                return existingCustomer;
+
+            }
+
+
+            /*
+            =========================================
+            New Customer
+            =========================================
+            */
+
+            const now =
+                new Date();
+
+            const customer =
+                CustomerModel.create({
+
+                    customerId:
+                        generateCustomerId(),
+
+                    provider:
+                        data.provider,
+
+                    providerId:
+                        data.providerId,
+
+                    displayName:
+                        data.displayName,
+
+                    username:
+                        data.username || "",
+
+                    createdAt:
+                        now,
+
+                    updatedAt:
+                        now,
+
+                    status:
+                        "active"
+
+                });
+
+            CustomerRepository.create(
+                customer
+            );
+
+            return customer;
+
+        } finally {
+
+            if (lockAcquired) {
+
+                lock.releaseLock();
+
+            }
+
+        }
+
+    }
+
 
     function create(customer) {
 
     }
 
+
     function update(customer) {
 
     }
+
 
     return {
 
@@ -176,4 +248,3 @@ const CustomerService = (() => {
     };
 
 })();
-
