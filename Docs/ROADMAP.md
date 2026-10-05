@@ -1,44 +1,87 @@
-# COMPLETED:
-## ✅ Dashboard v2.0
+# PREVIA CMS Roadmap
 
-Status: COMPLETED
+Documentation revision: 2026-10-06
 
-### Improvements
+## Completed
 
-- Two-column responsive dashboard layout.
-- Removed unnecessary vertical scrolling.
-- Publication information merged into a single full-width card.
-- Refined UI:
-  - updated cards;
-  - improved typography;
-  - lighter shadows;
-  - subtle borders.
-- Dashboard now displays all key information on a single screen.
+### Dashboard v2.0
 
-Result:
-Dashboard became the primary overview page of PREVIA CMS and follows the project's minimalist design philosophy.
+COMPLETED.
 
-# NEXT MILESTONES:
-## Next Milestones
+Current Dashboard provides:
+- statistics;
+- publication information;
+- Publish;
+- Archive;
+- Restore;
+- Refresh Images.
 
-### Dashboard Actions
-Quick actions directly from Dashboard:
-- Validate
-- Publish
-- Refresh Media
+### Customer Concurrency Fix
 
-### Settings
-Central configuration module:
-- GitHub
-- Google Drive
-- CMS configuration
+COMPLETED — 2026-10-06.
+
+Implemented:
+- script lock around Customer get-or-create;
+- provider lookup inside lock;
+- maximum-existing-ID generation;
+- Customer tests;
+- real Telegram smoke tests.
+
+Validation:
+8/8 automated tests passed.
+Two real concurrency scenarios passed.
+
+Git commit:
+2cf815f fix: make customer creation atomic
+
+Production deployment:
+@68
+
+## Next milestones
 
 ### Validation v2.0
-Improved diagnostics and clearer validation messages.
+
+Improve diagnostics and make validation errors clearer.
+
+### Settings
+
+Create a controlled administrative workflow around Config.
+
+### Security v2
+
+Review remaining sensitive values in Config.
+
+Core → CMS HMAC secret already uses Script Properties.
+
+### Core ↔ CMS boundary review
+
+Ensure:
+Core → business/domain rules
+CMS → persistence/infrastructure
+
+Avoid duplicated rules.
+
+### Authentication review
+
+Review long-term Telegram authentication while preserving provider identity, Customer ID, sessions, Favorites and Order ownership.
+
+### Integration and concurrency testing
+
+Expand testing for:
+- Core → CMS authenticated requests;
+- repeated Customer requests;
+- Favorites ownership;
+- Order concurrency;
+- reservation concurrency;
+- document queue;
+- publication queue.
+
+Do not add GCP/Execution API infrastructure solely for one-off testing.
 
 ### Mobile CMS UX
-Additional usability improvements for phones and tablets.
 
-Security v2
+Improve Dashboard usability on smaller screens.
 
-- Move secrets from Config sheet to Script Properties.
+## Roadmap rule
+
+Future items are not implemented functionality. Move completed work to Completed.

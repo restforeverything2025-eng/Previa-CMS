@@ -1,284 +1,93 @@
 # PREVIA Publish Pipeline
 
-Version: 2.0
-
+Documentation revision: 2026-10-06
 Status: Production
 
----
+## Purpose
 
-# Purpose
+The pipeline is deterministic in order but spans multiple external systems. It is not a database-style atomic transaction.
 
-This document describes the complete publication process of PREVIA CMS.
+## New product pipeline
 
-The pipeline is deterministic.
-
-Every publication always follows the same sequence.
-
-No service may change the execution order without architectural review.
-
----
-
-# Pipeline Overview
-
-```
+~~~text
 Read Products
-      │
-      ▼
-Reset Publish Report
-      │
-      ▼
-New Products?
- ┌────┴────┐
- │         │
-No        Yes
- │         │
- ▼         ▼
-Publish    ID Generator
-data.js         │
- │              ▼
- │        SKU Generator
- │              │
- │              ▼
- │        Normalizer
- │              │
- │              ▼
- │   Incoming Validation
- │              │
- │              ▼
- │   Catalog Validation
- │              │
- │              ▼
- │ Prepare Product Folders
- │              │
- │              ▼
- │   Image Validation
- │              │
- │              ▼
- └────────► Generate data.js
-                    │
-                    ▼
-      Write Generated Fields
-                    │
-                    ▼
-         Cleanup Incoming
-                    │
-                    ▼
-         Publish Report
-```
-
----
-
-# Step 1
-
-Read catalog from Google Sheets.
-
-Service:
-
-Products
-
-Output:
-
-products[]
-
----
-
-# Step 2
-
-Reset publication report.
-
-Service:
-
-PublishReport
-
-Purpose:
-
-Start a clean publication log.
-
----
-
-# Step 3
-
-Determine whether new products exist.
-
-Service:
-
-IncomingValidator
-
-Two execution branches exist.
-
----
-
-# Branch A
-
-No New Products
-
-Pipeline:
-
-Publish data.js
-
-↓
-
-Show report
-
-↓
-
-Finish
-
-No Google Drive operations occur.
-
-No IDs or SKUs are generated.
-
----
-
-# Branch B
-
-New Products
-
-Complete pipeline:
-
+ ↓
+Reset Publication Report
+ ↓
+Detect New Products
+ ↓
 Assign IDs
-
-↓
-
+ ↓
 Assign SKUs
-
-↓
-
-Normalize data
-
-↓
-
+ ↓
+Normalize
+ ↓
 Validate Incoming
-
-↓
-
+ ↓
 Validate Catalog
-
-↓
-
-Create Product Folders
-
-↓
-
+ ↓
+Prepare Product Folders
+ ↓
 Validate Images
-
-↓
-
+ ↓
 Generate data.js
-
-↓
-
-Write IDs and SKUs
-
-↓
-
+ ↓
+Write Generated Fields
+ ↓
 Cleanup Incoming
+ ↓
+Publication Journal / Report
+~~~
 
-↓
+## No new products
 
-Show report
+Current implementation can publish data.js directly and record the publication when no new products require preparation.
 
----
+## Services
 
-# Publish Report
+- Products → catalog input.
+- IdGenerator → product IDs.
+- SkuGenerator → SKUs.
+- Normalizer → safe normalization.
+- IncomingValidator → incoming consistency.
+- Validation → catalog/image validation.
+- IncomingPublisher → product folders and incoming cleanup.
+- DataGenerator → public data.js.
+- SpreadsheetWriter → generated fields.
+- PublishReport → report.
+- PublicationJournal → publication history.
 
-Every important step is recorded.
+## Failure behaviour
 
-Example:
+The pipeline throws on errors and records failure in PublicationJournal.
 
-✓ IDs assigned
+Because operations span Sheets, Drive and GitHub, a failure does not automatically roll back all earlier external changes.
 
-✓ SKUs assigned
+Therefore a failed publication should be verified before retrying blindly.
 
-✓ Validation completed
+## Media refresh
 
-✓ data.js updated
+RefreshService calls MediaSync.
 
-✓ Google Sheets updated
+MediaSync:
+1. reads Google Drive media;
+2. reads the GitHub repository tree;
+3. compares media;
+4. uploads changed/new files;
+5. removes orphan published files;
+6. updates media-manifest.json;
+7. returns a synchronization result.
 
-✓ Incoming cleaned
+Direction:
 
-✓ Publication completed
+~~~text
+Google Drive → GitHub
+~~~
 
----
+## Order-triggered publication
 
-# Failure Behaviour
+Order creation can mark catalog publication work as pending. A separate worker processes pending publication work asynchronously.
 
-The pipeline stops immediately on the first error.
+## Stability rule
 
-Examples:
-
-Validation error
-
-↓
-
-Pipeline stops.
-
-Missing images
-
-↓
-
-Pipeline stops.
-
-Duplicate SKU
-
-↓
-
-Pipeline stops.
-
-Nothing is published after a failure.
-
----
-
-# Atomic Philosophy
-
-Publication is treated as one logical operation.
-
-Either:
-
-Everything succeeds
-
-or
-
-Publication stops immediately.
-
-Partial publication is never considered successful.
-
----
-
-# Why This Pipeline Exists
-
-The pipeline guarantees:
-
-- predictable publication
-- reproducible results
-- safe validation
-- automatic recovery
-- simple debugging
-
----
-
-# Future Extensions
-
-Possible future stages:
-
-- automatic backup
-- publication statistics
-- rollback support
-- publication history
-
-The execution order should remain unchanged.
-
-Refresh Images
-
-Refresh synchronizes GitHub images with Google Drive.
-
-Steps:
-
-1. Read Google Drive.
-2. Read GitHub Repository Tree.
-3. Compare media.
-4. Upload new files.
-5. Delete orphan files.
-6. Update media-manifest.json.
-7. Return synchronization report.
+Do not reorder stages without architecture review, tests, documentation and failure-path review.

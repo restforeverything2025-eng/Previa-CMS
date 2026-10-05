@@ -1,295 +1,156 @@
 # PREVIA Backup & Recovery
 
-Version: 2.0
-
+Documentation revision: 2026-10-06
 Status: Production
 
----
-
-# Purpose
-
-This document describes how to completely restore PREVIA after hardware failure,
-computer replacement,
-or accidental data loss.
-
-Following this guide should allow restoring the complete system in less than one hour.
-
----
-
-# What Must Be Backed Up
-
-PREVIA consists of five independent parts.
-
-1.
-
-Google Sheets
-
-↓
-
-Business Data
-
-2.
-
-Google Drive
-
-↓
-
-Product Images
-
-3.
-
-Google Apps Script
-
-↓
-
-CMS Source Code
-
-4.
-
-GitHub
-
-↓
-
-Frontend
-
-↓
-
-CMS Repository
-
-5.
-
-Documentation
-
-↓
-
-Project Bible
-
----
-
-# Recovery Order
-
-Always restore components in this order.
-
-Google Account
-
-↓
-
-GitHub
-
-↓
-
-Google Sheets
-
-↓
-
-Google Drive
-
-↓
-
-Apps Script
-
-↓
-
-Frontend
-
-↓
-
-Documentation
-
----
-
-# GitHub Recovery
-
-Repositories:
-
-Previa-Vintage-App
-
-Previa-CMS
-
-Clone:
-
-git clone ...
-
-Verify:
-
-git status
-
-Working tree clean
-
----
-
-# Apps Script Recovery
-
-Install:
-
-Node.js
-
-↓
-
-npm
-
-↓
-
-clasp
-
-Login:
-
-clasp login
-
-Clone project:
-
-clasp clone SCRIPT_ID
-
-Verify:
-
-clasp status
-
-Upload:
-
-clasp push
-
----
-
-# Google Drive Recovery
-
-Verify:
-
-Products Folder
-
-Incoming Folder
-
-Images
-
-Folder names
-
-Every folder name must match product SKU.
-
----
-
-# Google Sheets Recovery
-
-Verify:
-
-Products Sheet
-
-Config Sheet
-
-Generated fields
-
-Configuration values
-
----
-
-# Configuration Verification
-
-Verify:
-
-Products Folder ID
-
-Incoming Folder ID
-
-GitHub Owner
-
-GitHub Repository
-
-GitHub Branch
-
-GitHub Token
-
-Exchange Rate API
-
----
-
-# Frontend Recovery
-
-Verify:
-
-data.js
-
-media-manifest.json
-
-images/
-
-GitHub Pages
-
----
-
-# Functional Tests
-
-Run:
-
-Publish Boutique
-
-↓
-
-Refresh Media
-
-↓
-
-Open Website
-
-↓
-
-Verify Product
-
-↓
-
-Verify Images
-
----
-
-# Success Criteria
-
-Recovery is complete when:
-
-Publish succeeds
-
-↓
-
-Website works
-
-↓
-
-Images load
-
-↓
-
-GitHub updated
-
-↓
-
-Google Sheets synchronized
-
----
-
-# Long-Term Backup Strategy
-
-Maintain:
-
+## Purpose
+
+Restore PREVIA after hardware failure, computer replacement, accidental data loss or loss of the local development environment.
+
+## Components
+
+1. Google Sheets
+   - Products
+   - Config
+   - Customers
+   - Favorites
+   - Orders
+   - OrderItems
+   - PublicationJournal
+   - other runtime sheets used by CMS
+
+2. Google Drive
+   - Products images
+   - Incoming
+   - PREVIA/ORDERS documents
+
+3. Google Apps Script
+   - CMS source
+   - Script Properties
+   - triggers
+   - deployments
+
+4. GitHub
+   - PREVIA source repositories
+   - documentation
+   - tests
+
+5. Documentation
+   - architecture
+   - development rules
+   - recovery
+   - roadmap
+
+## Important versioning rule
+
+GitHub and Apps Script deployments are separate versioning systems.
+
+~~~text
+GitHub main
+   ↓
+commit 2cf815f
+
+Apps Script project
+   ↓
+production deployment
+   ↓
+@68
+~~~
+
+A Git commit does not update an Apps Script deployment. clasp push updates project content. Deployment update is a separate operation.
+
+## Recovery order
+
+~~~text
+Google Account access
+ ↓
 GitHub repositories
-
-↓
-
-Apps Script
-
-↓
-
+ ↓
+local environment
+ ↓
+Apps Script source
+ ↓
+Script Properties / triggers / deployment
+ ↓
 Google Sheets
-
-↓
-
+ ↓
 Google Drive
+ ↓
+frontend
+ ↓
+functional verification
+~~~
 
-↓
+## GitHub recovery
 
-Documentation
+Clone the repository and verify:
 
-No component should exist without backup.
+~~~text
+git status
+git log -1 --oneline
+~~~
 
----
+The Customer concurrency rollback checkpoint created before the fix is:
 
-# Disaster Recovery Rule
+~~~text
+pre-customer-concurrency-fix-2026-10-05
+~~~
 
-The PREVIA project must never depend on one computer.
+Do not delete or rewrite it without an explicit recovery reason.
 
-Any authorized developer should be able to restore the entire system using this document.
+## Apps Script recovery
+
+Install Node.js, npm and clasp.
+
+~~~text
+clasp login
+clasp status
+clasp push
+~~~
+
+Before pushing, compare local source with GitHub.
+
+Preserve the existing production deployment ID and its settings. Do not create a new production deployment merely because the local environment was recreated.
+
+## Secrets
+
+The Core → CMS HMAC secret is stored in Script Properties under PREVIA_CORE_HMAC_SECRET.
+
+It must never be committed to GitHub or placed in frontend code.
+
+## Google Sheets
+
+Verify at minimum:
+
+- Products;
+- Config;
+- Customers;
+- Favorites;
+- Orders;
+- OrderItems;
+- PublicationJournal.
+
+Do not recreate production sheets blindly.
+
+## Google Drive
+
+Verify:
+
+- Products;
+- Incoming;
+- product SKU folders;
+- PREVIA/ORDERS.
+
+## Functional recovery test
+
+Open CMS → Dashboard → verify statistics → verify Customer/Favorites data → verify Orders → run a safe publication/media test → open public website.
+
+Customer recovery should include a repeated authentication check to ensure the same provider identity does not create a duplicate Customer.
+
+## Success criteria
+
+Recovery is complete when CMS, Sheets, Drive, authentication, Dashboard, publication, media synchronization, Customer records, Orders and the public website are working.
+
+## Disaster recovery rule
+
+Source code is recoverable from GitHub. Runtime business data is recovered from Google services. Secrets are restored through secure configuration, not source control.

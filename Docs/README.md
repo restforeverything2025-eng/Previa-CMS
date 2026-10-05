@@ -2,189 +2,202 @@
 
 Google Apps Script based Content Management System for the PREVIA Vintage boutique.
 
----
+Documentation revision: 2026-10-06
+Status: Production
 
-# Overview
+## Overview
 
-Design principles:
+PREVIA CMS is the infrastructure and persistence layer of the PREVIA ecosystem.
 
-- Simple
-- Reliable
-- One Module = One Responsibility
-- Google Sheets = Single Source of Truth
+It connects:
+- Google Sheets;
+- Google Drive;
+- PREVIA Core;
+- GitHub;
+- the public PREVIA website.
 
-PREVIA CMS is the central management system of the PREVIA ecosystem.
+Principles:
+- Simple;
+- Reliable;
+- One Module = One Responsibility;
+- clear Core ↔ CMS boundary;
+- Google Sheets as authoritative business-data storage;
+- secrets outside frontend code;
+- test before production.
 
-It provides a complete publishing pipeline from Google Sheets and Google Drive to the public boutique hosted on GitHub Pages.
+## Main responsibilities
 
-The project follows one simple principle:
+### Catalog
+Product management, IDs, SKUs, normalization, validation and publication.
 
-> Google Sheets is the Single Source of Truth.
+### Media
+Google Drive image management, GitHub publication and media synchronization.
 
----
+### Customer
+Customer registry, provider identity lookup, atomic get-or-create and Customer ID generation.
 
-# Main Features
+### Favorites
+Customer favorites persistence and duplicate prevention.
 
-- Product management
-- Automatic ID generation
-- Automatic SKU generation
-- Product normalization
-- Validation before publishing
-- Google Drive image management
-- GitHub publication
-- Media synchronization
-- Exchange rate support
-- Publish reports
+### Orders
+Orders/OrderItems persistence, product reservation, public order numbers, document queue and catalog publication queue.
 
----
+### Administration
+Dashboard, Publish, Archive, Restore, Refresh Images and publication journal.
 
-# Technology Stack
+## Technology
 
-- Google Apps Script
-- Google Sheets
-- Google Drive
-- GitHub
-- Git
-- clasp
-- VS Code
+- Google Apps Script;
+- Google Sheets;
+- Google Drive;
+- GitHub;
+- Git;
+- clasp;
+- Node.js tests;
+- VS Code.
 
----
+## Architecture
 
-# Architecture
+~~~text
+PREVIA Vintage App
+        ↓
+    PREVIA Core
+        ↓
+ authenticated CMS API
+        ↓
+    PREVIA CMS
+     ↙       ↘
+ Sheets       Drive
+     ↘       ↙
+       GitHub
+          ↓
+      Public site
+~~~
 
-```text
-Google Sheets
-      │
-      ▼
-Validation
-      │
-      ▼
-Normalizer
-      │
-      ▼
-Incoming Processing
-      │
-      ▼
-Image Validation
-      │
-      ▼
-Data Generator
-      │
-      ▼
-GitHub Publisher
-      │
-      ▼
-Spreadsheet Update
-      │
-      ▼
+## API
+
+WebApp.js is the single HTTP entry point.
+
+Current API areas:
+- Customer;
+- Favorites;
+- Orders;
+- Product lookup.
+
+Customer/Favorites requests require authenticated Core envelopes.
+
+Order requests use the centralized Core HMAC implementation.
+
+## Customer
+
+Customers are stored in the Customers sheet.
+
+Columns:
+customerId, provider, providerId, displayName, username, createdAt, updatedAt, status.
+
+IDs use C000001, C000002 and so on.
+
+Creation is protected by Apps Script Script Lock.
+
+## Favorites
+
+Favorites are stored in Favorites and keyed by customerId.
+
+## Orders
+
+Orders are stored in Orders and OrderItems.
+
+CMS provides persistence and storage-side concurrency protection. Order domain rules remain in Core.
+
+## Order documents
+
+Order documents are generated asynchronously after the order is persisted.
+
+## Publication
+
+~~~text
+Products
+ ↓
+ID
+ ↓
+SKU
+ ↓
+Normalize
+ ↓
+Validate
+ ↓
+Prepare folders
+ ↓
+Validate images
+ ↓
+Generate data.js
+ ↓
+Write generated fields
+ ↓
 Cleanup
-```
+ ↓
+Journal / report
+~~~
 
-# Repository Structure
+Media refresh:
 
-Code.js
+~~~text
+Google Drive → MediaSync → GitHub
+~~~
 
-Config.js
+## Testing
 
-Products.js
+Node tests live under tests/.
 
-Publish.js
+Customer concurrency suite:
+8 tests, 8 passed, 0 failed.
 
-PublishReport.js
+tests/ is excluded from Apps Script upload by .claspignore.
 
-Validation.js
+## Development workflow
 
-Normalizer.js
-
-IncomingValidator.js
-
-IncomingPublisher.js
-
-Drive.js
-
-MediaSync.js
-
-ImagePublisher.js
-
-GitHub.js
-
-DataGenerator.js
-
-ExchangeRate.js
-
-SkuGenerator.js
-
-IdGenerator.js
-
-SpreadsheetWriter.js
-
-Migration.js
-
-WebApp.js
-
-appsscript.json
-
----
-
-# Development Workflow
-
-```text
-git status
-
-↓
-
-Develop
-
-↓
-
+~~~text
+Understand
+ ↓
+Implement
+ ↓
 Test
-
-↓
-
-git add .
-
-↓
-
-git commit
-
-↓
-
-git push
-
-↓
-
+ ↓
+Review diff
+ ↓
+Git commit
+ ↓
+Git push
+ ↓
 clasp push
-```
+ ↓
+Update intended deployment
+ ↓
+Production smoke test
+~~~
 
-# Project Status
+GitHub commits and Apps Script deployment versions are separate.
 
-Version:
-PREVIA CMS 2.0
+## Current checkpoint
 
-Status:
-Production
+As of 2026-10-06:
+- GitHub main: 2cf815f;
+- Customer concurrency fix: complete;
+- Customer tests: 8/8;
+- production Apps Script deployment: @68;
+- real Telegram smoke tests passed;
+- working tree was clean after the fix.
 
 Architecture:
 Stable
 
-Repository:
-Git + GitHub + clasp
-
 Development:
 Active
 
-- Validation
-- Publish
-- MediaSync
-- RefreshService
-- Dashboard
+## Next areas
 
-MediaSync uses a single GitHub Repository Tree request for image synchronization, allowing efficient operation even with very large catalogs.
-
----
-
-## License
-
-This project is proprietary software.
-
-See the LICENSE and NOTICE.md files for licensing information.
+- validation diagnostics;
+- remaining secret storage review;
+- Core ↔ CMS boundary review;
+- integration/concurrency testing;
+- long-term Telegram authentication review.

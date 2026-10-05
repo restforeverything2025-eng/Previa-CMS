@@ -1,324 +1,222 @@
 # PREVIA CMS Architecture
 
-Version: 2.0
+Documentation revision: 2026-10-06
+System status: Production
 
-Status: Production
+## Purpose
 
----
+PREVIA CMS is the infrastructure and persistence layer of the PREVIA ecosystem. It connects PREVIA Core with Google Sheets, Google Drive and GitHub.
 
-# Purpose
+## System boundary
 
-This document explains the architectural principles of PREVIA CMS.
+~~~text
+PREVIA Vintage App
+        ↓
+   PREVIA Core
+        ↓
+ authenticated CMS API
+        ↓
+    PREVIA CMS
+     ↙       ↘
+ Google Sheets  Google Drive
+        ↘     ↙
+          GitHub
+             ↓
+        public website
+~~~
 
-It describes why the system is designed this way,
-how services interact,
-and which rules must never be violated.
+Core owns shared domain/business rules. CMS owns persistence, storage, publication and Apps Script infrastructure.
 
-The goal is to preserve a simple,
-predictable,
-and maintainable architecture.
+## Core principles
 
----
+- One module = one responsibility.
+- One authoritative owner for each type of data.
+- Core business rules must not be duplicated in CMS.
+- Persistence-level atomicity belongs at the storage boundary when required.
+- HTTP authentication is verified before request dispatch.
+- Do not create competing doGet/doPost entry points.
+- Avoid circular dependencies.
+- Prefer small, reviewable changes.
 
-# Core Principles
+## Data ownership
 
-## Single Responsibility
+| Data | Authoritative store |
+|---|---|
+| Products | Google Sheets / Products |
+| Product images | Google Drive |
+| Customers | Google Sheets / Customers |
+| Favorites | Google Sheets / Favorites |
+| Orders | Google Sheets / Orders |
+| Order items | Google Sheets / OrderItems |
+| Publication history | Google Sheets / PublicationJournal |
+| Project configuration | Google Sheets / Config |
+| Public catalog | GitHub / data.js |
+| Published media | GitHub / images and media-manifest.json |
+| Core → CMS HMAC secret | Apps Script Script Properties |
 
-Every service has exactly one responsibility.
+GitHub is the publication target for public catalog/media, not the business-data source of truth.
 
-Examples:
+## Customer concurrency
 
-- Products → Product catalog
-- Drive → Google Drive
-- GitHub → GitHub API
-- Validation → Validation
-- Publish → Orchestration
+Customer get-or-create is atomic at the CMS persistence boundary.
 
-A service must never perform work belonging to another service.
+~~~text
+request
+  ↓
+CustomerEndpoint
+  ↓
+CustomerService.getOrCreateCustomer()
+  ↓
+Script Lock
+  ↓
+findByProvider
+  ↓
+existing? ── yes → return
+  │
+  no
+  ↓
+generate next Customer ID
+  ↓
+create row
+  ↓
+release lock
+~~~
 
----
+Customer IDs use C000001, C000002 and so on. The generator uses the maximum existing numeric Customer ID rather than row count.
 
-## Single Source of Truth
+The lock covers lookup, ID generation and creation. This protects the Customers sheet from concurrent creation races.
 
-Every type of data has only one authoritative source.
+Validation completed 2026-10-06:
+- Customer automated tests: 8/8 passed.
+- Two different Telegram identities tested concurrently.
+- One Telegram identity tested from two devices.
+- No duplicate Customer was created for the same provider identity.
 
-Examples:
+## Core → CMS authentication
 
-Products
-→ Google Sheets
+WebApp verifies authenticated Core envelopes before dispatching Customer and Favorites requests.
 
-Images
-→ Google Drive
+Order requests use the same centralized implementation in Api/OrderAuthentication.js through the order-specific wrapper.
 
-Public Catalog
-→ data.js
+The secret is read from Script Properties under PREVIA_CORE_HMAC_SECRET.
 
-Repository
-→ GitHub
+The browser must never receive this secret.
 
-Configuration
-→ Config Sheet
+## HTTP entry point
 
----
+WebApp.js is the single production HTTP entry point.
 
-## Publish Pipeline
+It provides:
+- doGet for the CMS UI;
+- doPost for API dispatch;
+- Customer;
+- Favorites;
+- Orders;
+- Product lookup;
+- publication/refresh helpers.
 
-Publishing always follows the same sequence.
+Do not add another doGet or doPost.
 
-Products
+## Publication
 
-↓
+Publish.js orchestrates the catalog pipeline:
 
-ID Generator
-
-↓
-
-SKU Generator
-
-↓
-
-Normalizer
-
-↓
-
-Incoming Validation
-
-↓
-
-Catalog Validation
-
-↓
-
+~~~text
+Read Products
+ ↓
+Detect new products
+ ↓
+Assign IDs
+ ↓
+Assign SKUs
+ ↓
+Normalize
+ ↓
+Validate Incoming
+ ↓
+Validate Catalog
+ ↓
 Prepare Product Folders
-
-↓
-
-Image Validation
-
-↓
-
+ ↓
+Validate Images
+ ↓
 Generate data.js
-
-↓
-
-Write Generated Fields
-
-↓
-
+ ↓
+Write generated fields
+ ↓
 Cleanup Incoming
+ ↓
+Journal / Report
+~~~
 
-↓
+If there are no new products, the implementation can publish data.js without the new-product preparation stages.
 
-Publication Report
+The pipeline stops on errors, but it is not a database transaction. It spans Google Sheets, Google Drive and GitHub, so a failure does not automatically roll back every earlier external operation.
 
-The order of these steps must never change without architectural review.
+## Media synchronization
 
----
+Google Drive is the source of product images.
 
-## Service Communication
-
-Services communicate only through public functions.
-
-Example:
-
-Publish
-
-↓
-
-assignSku()
-
-↓
-
-SkuGenerator
-
-Publish never modifies SKU values directly.
-
----
-
-## No Circular Dependencies
-
-Services may depend only on lower-level services.
-
-Example:
-
-Publish
-↓
-
-Validation
-↓
-
-Drive
-
-Allowed
-
-Drive
-↓
-
-Publish
-
-Forbidden
-
----
-
-## Data Flow
-
-Google Sheets
-
-↓
-
-Products Service
-
-↓
-
-Business Logic
-
-↓
-
-Data Generator
-
-↓
-
-GitHub
-
-↓
-
-Website
-
-Only one direction.
-
-No service writes data backwards.
-
----
-
-## Error Handling
-
-Every service reports only its own errors.
-
-Validation reports validation problems.
-
-Drive reports Google Drive problems.
-
-GitHub reports GitHub API problems.
-
-Publish never hides errors.
-
----
-
-## Testing Philosophy
-
-Every service should provide small isolated test functions.
-
-Tests should verify one responsibility only.
-
-Example:
-
-testSkuCounters()
-
-instead of
-
-testEverything()
-
----
-
-## Documentation Rule
-
-Documentation explains architecture.
-
-Code explains implementation.
-
-Never duplicate source code inside documentation.
-
----
-
-# Architecture Goals
-
-The PREVIA CMS architecture is designed to be:
-
-- Simple
-- Predictable
-- Modular
-- Easy to maintain
-- Easy to extend
-- Easy to debug
-
----
-
-# Stability Rule
-
-New features must integrate into the existing architecture.
-
-The architecture should not change unless there is a significant long-term benefit.
-
-Stability is preferred over unnecessary refactoring.
-
----
-
-# PREVIA Philosophy
-
-The project follows one guiding principle:
-
-Simple systems survive.
-
-Complex systems eventually require rewriting.
-
-PREVIA always prefers simplicity.
-
-## Dashboard Architecture
-
-Dashboard follows the same architectural principles as the rest of PREVIA.
-
-Responsibilities:
-
-- Display system statistics.
-- Display publication status.
-- Never perform business logic.
-- Never modify project data.
-- Read-only presentation layer.
-
-Data source:
-
-DashboardService
-
-Rendering:
-
-Dashboard.html
-
-Principle:
-
-Service → HTML → User
-
-## Media Synchronization
-
-### Single Source of Truth
-
-Google Drive is the single source of truth for all product images.
-
-GitHub stores only published copies.
-
-### Synchronization Flow
-
+~~~text
 Google Drive
-↓
-Drive.js
-↓
+    ↓
 MediaSync
-↓
-GitHub.js
-↓
-GitHub Repository
+    ↓
+GitHub published media
+~~~
 
-### Synchronization
+MediaSync reads Drive state, reads the GitHub repository tree, compares media, uploads changed/new files, removes orphan published files and updates media-manifest.json.
 
-MediaSync performs bidirectional synchronization.
+This is Drive → GitHub synchronization, not a bidirectional media store.
 
-It automatically:
+## Dashboard
 
-- uploads new images;
-- removes orphan GitHub images;
-- updates media-manifest.json after successful synchronization.
+Dashboard is an administrative workspace, not a read-only statistics page.
 
-### GitHub Optimization
+It currently:
+- displays product and media statistics;
+- displays the last publication result;
+- launches Publish;
+- launches Archive;
+- launches Restore;
+- launches Refresh Images.
 
-GitHub repository images are indexed using a single Repository Tree request.
+Dashboard.html is presentation/interaction UI. Server-side modules perform the actual operations.
 
-This replaces hundreds of individual folder requests and significantly reduces GitHub API usage for large catalogs.
+## Orders
+
+Core owns order business rules. CMS owns persistence and storage-side concurrency.
+
+Orders.js currently:
+- validates persistence schema and payload;
+- checks duplicate order IDs;
+- checks product availability;
+- acquires a script lock;
+- reserves products;
+- persists Orders and OrderItems using Sheets batchUpdate;
+- assigns public order numbers;
+- initializes asynchronous document/publication state.
+
+PDF generation is outside the critical order transaction.
+
+## Order documents
+
+Order creation initializes document state. A separate worker later generates the PDF and stores its URL/status.
+
+Document generation failure must not turn an already persisted order into a failed order.
+
+## Documentation rule
+
+Documentation describes architecture and stable contracts. Code remains the implementation source of truth.
+
+When documentation and code disagree, inspect the current code first and then update documentation.
+
+## Current operational checkpoint
+
+As of 2026-10-06:
+- GitHub main: 2cf815f.
+- Customer concurrency fix: complete.
+- Production Apps Script deployment: @68.
+- Customer tests: 8/8.
+- Real Telegram smoke tests: passed.
+- CMS is not bound to a GCP project for Execution API use.

@@ -1,292 +1,144 @@
-# PREVIA Folder Structure
+# PREVIA CMS Folder Structure
 
-Version: 2.0
-
+Documentation revision: 2026-10-06
 Status: Production
 
----
+## Purpose
 
-# Purpose
+Current repository responsibility map.
 
-This document describes where every component of PREVIA is located.
+## Main structure
 
-The goal is that a new developer can find any file in less than one minute.
+~~~text
+Previa-CMS/
+├── Api/
+├── Customer/
+├── Favorites/
+├── Docs/
+├── tests/
+├── appsscript.json
+├── WebApp.js
+├── Code.js
+├── Config.js
+├── Products.js
+├── Orders.js
+├── OrderSchemaValidator.js
+├── OrderRepositoryAdapter.js
+├── ProductRepositoryAdapter.js
+├── OrderDocumentQueue.js
+├── OrderDocumentService.js
+├── Dashboard.html
+├── DashboardService.js
+├── Publish.js
+├── PublishReport.js
+├── PublicationJournal.js
+├── RefreshService.js
+├── MediaSync.js
+├── ImagePublisher.js
+├── IncomingPublisher.js
+├── IncomingValidator.js
+├── Validation.js
+├── Normalizer.js
+├── IdGenerator.js
+├── SkuGenerator.js
+├── DataGenerator.js
+├── SpreadsheetWriter.js
+├── ArchiveService.js
+├── RestoreService.js
+├── LookupService.js
+├── Drive.js
+├── GitHub.js
+├── ExchangeRate.js
+└── Migration.js
+~~~
 
----
+The Git tree is the authoritative exact file list.
 
-# Complete Architecture
+## Api/
 
-```
-Google Sheets
-        │
-        ▼
-Products
-Config
-Exchange Rate
-        │
-        ▼
-Google Apps Script
-        │
-        ▼
-Google Drive
-        │
-        ▼
-GitHub
-        │
-        ▼
-Frontend
-```
+HTTP-facing modules:
+- CustomerEndpoint.js
+- FavoritesEndpoint.js
+- OrderAuthentication.js
+- OrderEndpoint.js
+- ProductEndpoint.js
 
----
+WebApp.js is the single doGet/doPost entry point.
 
-# Google Sheets
+## Customer/
 
-Acts as the Single Source of Truth.
+CustomerModel, CustomerRepository, CustomerService and CustomerAPI.
 
-Contains only structured business data.
+CustomerRepository owns Customers-sheet persistence.
 
-Sheets:
+CustomerService owns Customer registry operations and atomic get-or-create.
 
+## Favorites/
+
+FavoritesModel, FavoritesRepository, FavoritesService and FavoritesAPI.
+
+Favorites are keyed by customerId.
+
+## Orders
+
+Orders.js handles storage-side order persistence and reservation coordination.
+
+OrderSchemaValidator validates schema and payload.
+
+OrderRepositoryAdapter bridges the endpoint and persistence.
+
+OrderDocumentQueue and OrderDocumentService handle asynchronous PDF work.
+
+## Publication
+
+Publish.js, PublishReport.js, PublicationJournal.js, DataGenerator.js and SpreadsheetWriter.js.
+
+## Media
+
+Drive.js, MediaSync.js and ImagePublisher.js.
+
+Current direction:
+
+~~~text
+Google Drive → GitHub published media
+~~~
+
+## Product import and validation
+
+Products.js, IncomingValidator.js, IncomingPublisher.js, Normalizer.js, Validation.js, IdGenerator.js and SkuGenerator.js.
+
+## Administration
+
+Dashboard.html, DashboardService.js, ArchiveService.js, RestoreService.js, LookupService.js and RefreshService.js.
+
+Dashboard actions currently include Publish, Archive, Restore and Refresh Images.
+
+## Configuration and infrastructure
+
+Config.js, GitHub.js, ExchangeRate.js, Migration.js, Code.js and WebApp.js.
+
+## Tests
+
+tests/ contains Node-based tests and is excluded from Apps Script upload by .claspignore.
+
+## Runtime data
+
+Google Sheets:
 - Products
 - Config
+- Customers
+- Favorites
+- Orders
+- OrderItems
+- PublicationJournal
 
-No images are stored inside Google Sheets.
+Google Drive:
+- Products/
+- Incoming/
+- PREVIA/ORDERS/
 
----
+## Boundary
 
-# Products Sheet
+CMS contains persistence and infrastructure.
 
-Contains the complete product catalog.
-
-Typical fields:
-
-- id
-- sku
-- category
-- brand
-- name
-- currency
-- price
-- status
-- dateAdded
-- description
-- notes
-- featuredHome
-
-Generated fields:
-
-- id
-- sku
-
-Manually maintained:
-
-- all remaining product information.
-
----
-
-# Config Sheet
-
-Stores project configuration.
-
-Examples:
-
-- Products Folder ID
-- Incoming Folder ID
-- GitHub Owner
-- GitHub Repository
-- GitHub Branch
-- GitHub Token
-- Exchange Rate API
-
-Changing configuration never requires code changes.
-
----
-
-# Google Apps Script
-
-Contains the complete CMS.
-
-Modules:
-
-- Config
-- Products
-- Publish
-- PublishReport
-- Validation
-- Normalizer
-- IdGenerator
-- SkuGenerator
-- Drive
-- GitHub
-- ImagePublisher
-- MediaSync
-- IncomingValidator
-- IncomingPublisher
-- SpreadsheetWriter
-- DataGenerator
-- ExchangeRate
-- Migration
-- WebApp
-
-Every module has one responsibility.
-
----
-
-# Google Drive
-
-Stores binary data only.
-
-Contains:
-
-Products/
-
-Incoming/
-
-No product metadata is stored here.
-
----
-
-# Products Folder
-
-Structure:
-
-Products/
-
-├── J0001/
-
-│ ├── 1.jpg
-
-│ ├── 2.jpg
-
-│ └── ...
-
-├── W0001/
-
-│ ├── 1.jpg
-
-│ ├── 2.jpg
-
-│ └── ...
-
-Folder name always equals SKU.
-
----
-
-# Incoming Folder
-
-Temporary import location.
-
-Structure:
-
-Incoming/
-
-├── 1/
-
-├── 2/
-
-├── 3/
-
-...
-
-Folders are processed during publication.
-
-After successful publishing they are deleted.
-
----
-
-# GitHub Repository
-
-Stores the public website.
-
-Important folders:
-
-images/
-
-data.js
-
-media-manifest.json
-
----
-
-# images
-
-Contains every published product image.
-
-Structure:
-
-images/
-
-├── J0001/
-
-├── J0002/
-
-├── W0001/
-
-...
-
----
-
-# data.js
-
-Generated automatically.
-
-Contains:
-
-- exchangeRate
-- products
-
-Never edited manually.
-
----
-
-# media-manifest.json
-
-Tracks synchronization state.
-
-Used by MediaSync.
-
-Allows uploading only changed files.
-
----
-
-# Frontend
-
-Receives data only from GitHub.
-
-Never communicates directly with:
-
-- Google Sheets
-- Google Drive
-- Apps Script
-
----
-
-# Data Ownership
-
-Google Sheets
-
-↓
-
-Business Data
-
-Google Drive
-
-↓
-
-Images
-
-GitHub
-
-↓
-
-Public Website
-
-Every piece of information has exactly one owner.
-
----
-
-# Stability Rule
-
-Changing folder structure requires architectural review.
-
-Folder names are part of the PREVIA architecture.
+PREVIA Core remains a separate repository and owns shared domain/business rules.

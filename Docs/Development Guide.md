@@ -1,405 +1,192 @@
 # PREVIA Development Guide
 
-Version: 2.0
-
+Documentation revision: 2026-10-06
 Status: Active
 
----
-
-# Purpose
-
-This document defines the engineering principles used during PREVIA development.
-
-Every new feature should follow these rules.
-
-The goal is to keep the project simple,
-predictable,
-maintainable,
-and stable over many years.
-
----
-
-# Principle 1
-
-One Module = One Responsibility
-
-Every module should perform exactly one job.
-
-Good:
-
-Drive
-
-↓
-
-Google Drive only
-
-Bad:
-
-Drive
-
-↓
-
-Google Drive
-
-↓
-
-Validation
-
-↓
-
-GitHub
-
----
-
-# Principle 2
-
-Single Source of Truth
-
-Every piece of information has one owner.
-
-Products
-
-↓
-
-Google Sheets
-
-Images
-
-↓
-
-Google Drive
-
-Configuration
-
-↓
-
-Config Sheet
-
-Public Catalog
-
-↓
-
-GitHub
-
-Never duplicate business data.
-
----
-
-# Principle 3
-
-Validation Before Publication
-
-No data may be published before validation.
-
-Pipeline:
-
-Normalize
-
-↓
-
-Validate
-
-↓
-
-Publish
-
-Never publish invalid data.
-
----
-
-# Principle 4
-
-Simple Is Better
-
-Always choose the simplest solution.
-
-Do not introduce abstraction unless it provides clear long-term value.
-
----
-
-# Principle 5
-
-Refactor With Evidence
-
-Never refactor because something "feels wrong."
-
-Refactor only when:
-
-- duplication is proven
-- architecture benefits
-- maintenance becomes easier
-
-Evidence first.
-
-Refactoring second.
-
----
-
-# Principle 6
-
-Public Functions Only
-
-Services communicate only through public functions.
-
-Never access another service's internal implementation.
-
----
-
-# Principle 7
-
-Pipeline Stability
-
-The publication pipeline is stable.
-
-New functionality should integrate into the existing pipeline.
-
-Avoid changing execution order.
-
----
-
-# Principle 8
-
-Architecture Before Features
-
-Before implementing a feature:
-
-Understand
-
-↓
-
-Design
-
-↓
-
-Implement
-
-↓
-
-Test
-
-↓
-
-Commit
-
-Never start coding without understanding where the feature belongs.
-
----
-
-# Principle 9
-
-One Feature — One Commit
-
-Each commit should represent one logical change.
+## 1. One module = one responsibility
 
 Examples:
+- Drive → Google Drive operations.
+- GitHub → GitHub API operations.
+- CustomerRepository → Customer persistence.
+- CustomerService → Customer registry logic.
+- Publish → publication orchestration.
+- DashboardService → Dashboard statistics.
 
-feat:
+## 2. Respect the Core → CMS boundary
 
-New functionality
+Core is the shared domain/service layer.
 
-fix:
+CMS is the persistence and infrastructure layer.
 
-Bug fix
+Before adding logic to CMS ask:
 
-refactor:
+> Is this a storage/infrastructure concern, or a shared domain rule?
 
-Internal improvement
+Persistence-level atomicity is valid in CMS when required to protect shared storage. Customer get-or-create is an example.
 
-docs:
+## 3. Single source of truth
 
-Documentation
+- Catalog → Google Sheets.
+- Images → Google Drive.
+- Customers → Customers sheet.
+- Favorites → Favorites sheet.
+- Orders → Orders and OrderItems.
+- Configuration → Config sheet.
+- Core → CMS HMAC secret → Script Properties.
+- Public generated catalog → GitHub.
 
-Avoid mixing unrelated changes.
+## 4. Validation before publication
 
----
+Normal publication order:
 
-# Principle 10
+~~~text
+Normalize
+ ↓
+Validate
+ ↓
+Publish
+~~~
 
-Test Before Publish
+Never bypass validation merely to make publication succeed.
 
-Every important module should provide small isolated test functions.
+## 5. Concurrency
 
-Tests should verify only one responsibility.
+Any operation that reads shared state, calculates a new value and writes it must be checked for race conditions.
 
----
+Relevant CMS examples:
+- Customer ID generation;
+- Customer creation;
+- order creation;
+- product reservation;
+- public order number generation.
 
-# Principle 11
+Customer creation uses Apps Script Script Lock around lookup → ID generation → create.
 
-Documentation Is Part of the Project
+Official reference:
+https://developers.google.com/apps-script/reference/lock/lock-service
 
-Documentation is not optional.
+## 6. Authentication boundary
 
-Architecture should always be documented.
+The browser must never receive the Core → CMS HMAC secret.
 
-Documentation must evolve together with the code.
+WebApp verifies the authenticated envelope before dispatch.
 
----
+Authentication implementation is centralized in Api/OrderAuthentication.js.
 
-# Principle 12
+Do not create endpoint-specific authentication variants without architectural review.
 
-Prefer Stability
+## 7. Public functions only
 
-Stable architecture is more valuable than clever architecture.
+Services communicate through their public functions. Do not reach into another module's private implementation.
 
-Avoid unnecessary redesign.
+## 8. Publication stability
 
-The project should become simpler over time.
+Do not reorder publication stages without architecture review, tests, documentation and failure-path review.
 
----
+## 9. Publication is not a database transaction
 
-# Git Workflow
+The pipeline stops on errors, but it spans Sheets, Drive and GitHub. Earlier external changes are not automatically rolled back.
 
-Normal development cycle:
+## 10. Test before production
 
-Code
+Recommended cycle:
 
-↓
-
-Test
-
-↓
-
-git status
-
-↓
-
-git add .
-
-↓
-
-git commit
-
-↓
-
-git push
-
-↓
-
-clasp push
-
-Always verify git status before committing.
-
----
-
-# Code Review Workflow
-
-New Feature
-
-↓
-
-Implementation
-
-↓
-
-Testing
-
-↓
-
-Architecture Review
-
-↓
-
+~~~text
+Understand
+ ↓
+Design
+ ↓
+Implement
+ ↓
+Run tests
+ ↓
+Review diff
+ ↓
 Commit
+ ↓
+Push Git
+ ↓
+clasp push
+ ↓
+Update intended deployment
+ ↓
+Smoke test
+~~~
 
-↓
+## 11. Tests
 
-Push
+Tests live in tests/.
 
-Never skip review for core services.
+Current groups include:
+- Customer concurrency;
+- Orders;
+- order document contract;
+- order document service;
+- product reservation.
 
----
+Customer suite:
 
-# Long-Term Goal
+~~~text
+8 tests
+8 passed
+0 failed
+~~~
 
-The objective of PREVIA is not only to build a working CMS.
+tests/ is excluded from Apps Script upload by .claspignore.
 
-The objective is to build a system that remains understandable,
-maintainable,
-and reliable years after its creation.
+## 12. Git workflow
 
-Every new feature should move the project closer to that goal.
+Use:
 
-Build Services First.
-Build UI Second.
+~~~text
+git status
+git diff
+git diff --check
+git add only intended files
+git diff --cached
+git commit
+git push origin main
+~~~
 
-The interface should display information
-provided by services.
+Do not blindly use git add . when unrelated local files may exist.
 
-The UI must not contain business logic.
+## 13. Apps Script workflow
 
-## Dashboard Philosophy
+Use:
 
-Dashboard is not a workspace.
+~~~text
+clasp status
+clasp push
+verify deployment
+update intended deployment
+smoke test
+~~~
 
-Dashboard is an overview.
+GitHub commit and Apps Script deployment version are separate.
 
-Actions belong to dedicated modules.
+## 14. No unapproved infrastructure changes
 
-Dashboard may provide shortcuts to actions but should never become overloaded with controls.
+Do not introduce GCP/Execution API configuration merely to solve a one-off test.
 
-## 2026-08-01
+The current CMS is not bound to a GCP project for Execution API use.
 
-### ✅ Archive Module Completed
+## 15. One logical change = one commit
 
-Implemented complete archive workflow:
+Prefer feat:, fix:, refactor:, docs: and test: prefixes.
 
-- SKU lookup
-- Product Preview
-- Archive confirmation
-- Google Sheets row move
-- Google Drive folder move
-- Report dialog
+## 16. Documentation is part of the project
 
-### ✅ Restore Module Completed
+Architecture, responsibilities and workflows must evolve together with the code.
 
-Implemented complete restore workflow:
+## 17. Definition of done
 
-- Archived SKU lookup
-- Product Preview
-- Restore confirmation
-- Google Sheets row restore
-- Google Drive folder restore
-- Report dialog
+A change is complete when relevant tests pass, the diff is reviewed, only intended files changed, GitHub is updated, Apps Script is updated when required, the intended deployment is updated and documentation is updated when architecture changed.
 
-## Dashboard Action Pattern
+## Dashboard rule
 
-Every dashboard action follows the same flow:
+Dashboard is an administrative workspace. It may launch Publish, Archive, Restore and Refresh Images. Business logic remains server-side.
 
-Action
-→ Prompt
-→ Lookup
-→ Preview
-→ Confirm
-→ Service
-→ Report
+## Stability rule
 
-Current implementation:
-
-- Publish
-- Archive
-- Restore
-
-Future modules should follow the same pattern.
-
-## Development Rules
-
-One module = one responsibility.
-
-Reuse existing components whenever possible.
-
-Avoid duplicate dialogs and UI.
-
-Create a new component only when an existing one cannot be reused.
-
-## Definition of Done
-
-A module is considered complete only after:
-
-- Functional testing completed
-- Temporary console.log removed
-- Temporary Logger.log removed (except test functions)
-- Git status checked
-- Git diff reviewed
-- Commit created
-- Changes pushed to GitHub
-
+Refactor only when a defect, duplication, unclear boundary, maintenance problem, security issue or concurrency issue is demonstrated.
