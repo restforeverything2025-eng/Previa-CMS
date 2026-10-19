@@ -404,3 +404,36 @@ test("syncMedia preserves the manifest and avoids deletions when a SKU folder is
   assert.deepEqual(calls, ["manifest"]);
   assert.match(report, /W0027/);
 });
+
+
+test("buildCurrentMediaSyncPlan preserves missing SKU images and still plans healthy SKUs", () => {
+  sandbox.getProducts = () => [{ sku: "W0027" }, { sku: "W0001" }];
+  sandbox.getProductFilesResult = sku => {
+    if (sku === "W0027") return { found: false, files: [] };
+    return { found: true, files: [driveFile("new.jpg")] };
+  };
+  sandbox.getPublishedMediaManifest = () => ({
+    W0027: [driveFile("1.jpg"), driveFile("2.jpg")]
+  });
+  sandbox.getRepositoryImages = () => ({
+    W0027: [
+      githubFile("1.jpg", "sha-1", "W0027"),
+      githubFile("2.jpg", "sha-2", "W0027")
+    ],
+    W0001: []
+  });
+
+  const result = JSON.parse(JSON.stringify(
+    sandbox.buildCurrentMediaSyncPlan()
+  ));
+
+  assert.equal(result.operations.length, 1);
+  assert.equal(result.operations[0].action, "upload");
+  assert.equal(result.operations[0].sku, "W0001");
+  assert.equal(result.warnings.length, 1);
+  assert.equal(result.warnings[0].sku, "W0027");
+  assert.deepEqual(
+    result.manifest.W0027.map(file => file.name),
+    ["1.jpg", "2.jpg"]
+  );
+});
