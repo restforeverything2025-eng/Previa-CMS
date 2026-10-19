@@ -78,6 +78,17 @@ function mergeMediaManifests(driveManifest, previousManifest, missingDriveSkus) 
   return merged;
 }
 
+function getSafeMediaManifest(products) {
+  const inventory = getMediaSyncInventory(products);
+  const previousManifest = getPublishedMediaManifest();
+
+  return mergeMediaManifests(
+    inventory.driveManifest,
+    previousManifest,
+    inventory.missingDriveSkus
+  );
+}
+
 function testMediaManifest() {
   const manifest = getMediaManifest();
   Logger.log(JSON.stringify(manifest, null, 2));
@@ -100,7 +111,9 @@ function testDriveFileInfo() {
 }
 
 function generateMediaManifest(manifestOverride) {
-  const manifest = manifestOverride || getMediaManifest();
+  const manifest = typeof manifestOverride === "undefined"
+    ? getSafeMediaManifest()
+    : manifestOverride;
 
   return {
     fileName: "media-manifest.json",
