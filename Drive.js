@@ -172,7 +172,7 @@ function getProductImages(sku) {
 
 }
 
-function getProductFiles(sku) {
+function getProductFilesResult(sku) {
 
   const config = getConfig();
 
@@ -180,68 +180,44 @@ function getProductFiles(sku) {
     config.products_folder_id
   );
 
-  const folders =
-    rootFolder.getFoldersByName(sku);
+  const folders = rootFolder.getFoldersByName(sku);
 
+  // A missing folder is an expected, explicitly reported state.
+  // Drive/API/access errors are deliberately not caught here.
   if (!folders.hasNext()) {
-
-    throw new Error(
-
-      "Validation failed\n\n" +
-
-      "SKU: " + sku +
-
-      "\n\nReason:\nPhotos folder not found."
-
-    );
-
+    return {
+      found: false,
+      files: []
+    };
   }
 
   const folder = folders.next();
-
   const files = folder.getFiles();
-
   const result = [];
 
   while (files.hasNext()) {
-
     const file = files.next();
-
-    const extension =
-      file.getName()
-          .split(".")
-          .pop()
-          .toLowerCase();
+    const extension = file.getName()
+      .split(".")
+      .pop()
+      .toLowerCase();
 
     if (
-
       extension !== "jpg" &&
       extension !== "jpeg" &&
       extension !== "png" &&
       extension !== "webp"
-
     ) {
-
       continue;
-
     }
 
     result.push({
-
-  id: file.getId(),
-
-  name: file.getName(),
-
-  size: file.getSize(),
-
-  mimeType: file.getMimeType(),
-
-  updated: file
-    .getLastUpdated()
-    .toISOString()
-
-});
-
+      id: file.getId(),
+      name: file.getName(),
+      size: file.getSize(),
+      mimeType: file.getMimeType(),
+      updated: file.getLastUpdated().toISOString()
+    });
   }
 
   result.sort((a, b) =>
@@ -255,8 +231,24 @@ function getProductFiles(sku) {
     )
   );
 
-  return result;
+  return {
+    found: true,
+    files: result
+  };
+}
 
+function getProductFiles(sku) {
+  const result = getProductFilesResult(sku);
+
+  if (!result.found) {
+    throw new Error(
+      "Validation failed\n\n" +
+      "SKU: " + sku +
+      "\n\nReason:\nPhotos folder not found."
+    );
+  }
+
+  return result.files;
 }
 
 function getDriveFileBytes(fileId) {
