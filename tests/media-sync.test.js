@@ -21,6 +21,7 @@ vm.runInContext(source, sandbox, {
 });
 
 const buildMediaSyncPlan = sandbox.buildMediaSyncPlan;
+const buildCurrentMediaSyncPlan = sandbox.buildCurrentMediaSyncPlan;
 
 // Planned interface for the new pure planning function.
 // The function will be implemented in MediaSync.js later.
@@ -424,7 +425,7 @@ test("buildCurrentMediaSyncPlan preserves missing SKU images and still plans hea
   });
 
   const result = JSON.parse(JSON.stringify(
-    sandbox.buildCurrentMediaSyncPlan()
+    buildCurrentMediaSyncPlan()
   ));
 
   assert.equal(result.operations.length, 1);
