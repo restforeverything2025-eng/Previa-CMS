@@ -456,3 +456,109 @@ function testSyncMedia() {
   syncMedia();
 
 }
+
+
+/**
+ * Builds a media synchronization plan without accessing
+ * Google Drive, GitHub, or other external services.
+ *
+ * Input:
+ * {
+ *   driveManifest: { [sku]: [{ id, name, ... }] },
+ *   githubManifest: { [sku]: [{ name, path, sha, ... }] },
+ *   driveBlobShas: { [sku]: { [fileName]: sha } },
+ *   missingDriveSkus: string[]
+ * }
+ *
+ * Output:
+ * {
+ *   operations: [{ action, sku, file }],
+ *   warnings: [{ type, sku }]
+ * }
+ */
+function buildMediaSyncPlan(input) {
+  const {
+    driveManifest = {},
+    githubManifest = {},
+    driveBlobShas = {},
+    missingDriveSkus = []
+  } = input || {};
+
+  const missingSkus = new Set(missingDriveSkus);
+  const operations = [];
+  const warnings = [];
+
+  // A missing Drive folder is not proof that its GitHub
+  // images should be deleted. Report it and leave them alone.
+  missingSkus.forEach(sku => {
+    warnings.push({
+      type: "missing-drive-folder",
+      sku: sku
+    });
+  });
+
+  Object.keys(driveManifest).forEach(sku => {
+    if (missingSkus.has(sku)) {
+      return;
+    }
+
+    const driveFiles = driveManifest[sku] || [];
+    const githubFiles = githubManifest[sku] || [];
+
+    const githubByName = new Map(
+      githubFiles.map(file => [file.name, file])
+    );
+
+    const driveNames = new Set(
+      driveFiles.map(file => file.name)
+    );
+
+    // Upload new files or files whose content has changed.
+    driveFiles.forEach(file => {
+      const githubFile = githubByName.get(file.name);
+
+      if (!githubFile) {
+        operations.push({
+          action: "upload",
+          sku: sku,
+          file: file
+        });
+        return;
+      }
+
+      const driveSha =
+        driveBlobShas[sku] &&
+        driveBlobShas[sku][file.name];
+
+      // If no content hash was supplied, do not guess that
+      // the image changed or remained unchanged.
+      if (
+        typeof driveSha === "string" &&
+        driveSha !== githubFile.sha
+      ) {
+        operations.push({
+          action: "upload",
+          sku: sku,
+          file: file
+        });
+      }
+    });
+
+    // Delete individual images missing from a Drive folder
+    // that is still present and has been successfully read.
+    githubFiles.forEach(file => {
+      if (!driveNames.has(file.name)) {
+        operations.push({
+          action: "delete",
+          sku: sku,
+          file: file
+        });
+      }
+    });
+  });
+
+  return {
+    operations: operations,
+    warnings: warnings
+  };
+}
