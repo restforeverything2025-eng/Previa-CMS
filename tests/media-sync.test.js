@@ -437,3 +437,16 @@ test("buildCurrentMediaSyncPlan preserves missing SKU images and still plans hea
     ["1.jpg", "2.jpg"]
   );
 });
+
+
+test("mergeMediaManifests does not invent an empty entry when a missing SKU has no previous manifest", () => {
+  const merged = JSON.parse(JSON.stringify(
+    sandbox.mergeMediaManifests(
+      {},
+      {},
+      ["W0027"]
+    )
+  ));
+
+  assert.equal(Object.prototype.hasOwnProperty.call(merged, "W0027"), false);
+});
