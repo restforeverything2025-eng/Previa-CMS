@@ -12,7 +12,9 @@ const source = fs.readFileSync(
   "utf8"
 );
 
-const sandbox = {};
+const sandbox = {
+  Logger: { log() {} }
+};
 vm.createContext(sandbox);
 vm.runInContext(source, sandbox, {
   filename: "MediaSync.js"
