@@ -23,8 +23,7 @@ vm.runInContext(source, sandbox, {
 const buildMediaSyncPlan = sandbox.buildMediaSyncPlan;
 const buildCurrentMediaSyncPlan = sandbox.buildCurrentMediaSyncPlan;
 
-// Planned interface for the new pure planning function.
-// The function will be implemented in MediaSync.js later.
+// Adapter for the pure planning function, normalizing cross-VM objects.
 function plan(input) {
   assert.equal(
     typeof sandbox.buildMediaSyncPlan,
@@ -255,7 +254,7 @@ test('does not plan operations for a missing SKU even if it appears in driveMani
   assert.equal(result.warnings.length, 1);
   assert.equal(result.warnings[0].type, 'missing-drive-folder');
   assert.equal(result.warnings[0].sku, 'W-001');
-  });
+});
 
 
 test("mergeMediaManifests keeps the last published images for a missing Drive folder", () => {
