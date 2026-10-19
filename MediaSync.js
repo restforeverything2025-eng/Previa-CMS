@@ -69,9 +69,6 @@ function mergeMediaManifests(driveManifest, previousManifest, missingDriveSkus) 
       Object.prototype.hasOwnProperty.call(previousManifest, sku)
     ) {
       merged[sku] = previousManifest[sku];
-    } else if (!Object.prototype.hasOwnProperty.call(merged, sku)) {
-      // Keep the key explicit even if no earlier manifest exists.
-      merged[sku] = [];
     }
   });
 
