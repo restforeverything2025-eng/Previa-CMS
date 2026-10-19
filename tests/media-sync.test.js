@@ -253,3 +253,152 @@ test('does not plan operations for a missing SKU even if it appears in driveMani
   assert.equal(result.warnings[0].type, 'missing-drive-folder');
   assert.equal(result.warnings[0].sku, 'W-001');
   });
+
+
+test("mergeMediaManifests keeps the last published images for a missing Drive folder", () => {
+  const merged = JSON.parse(JSON.stringify(
+    sandbox.mergeMediaManifests(
+      {
+        W0001: [driveFile("new.jpg")]
+      },
+      {
+        W0001: [driveFile("old.jpg")],
+        W0027: [driveFile("1.jpg"), driveFile("2.jpg")]
+      },
+      ["W0027"]
+    )
+  ));
+
+  assert.deepEqual(merged.W0001.map(file => file.name), ["new.jpg"]);
+  assert.deepEqual(merged.W0027.map(file => file.name), ["1.jpg", "2.jpg"]);
+});
+
+test("getMediaSyncInventory records a missing folder without hiding other SKUs", () => {
+  sandbox.getProducts = () => [{ sku: "W0001" }, { sku: "W0027" }];
+  sandbox.getProductFilesResult = sku => {
+    if (sku === "W0027") return { found: false, files: [] };
+    return { found: true, files: [driveFile("1.jpg")] };
+  };
+
+  const inventory = JSON.parse(JSON.stringify(
+    sandbox.getMediaSyncInventory()
+  ));
+
+  assert.deepEqual(Object.keys(inventory.driveManifest), ["W0001"]);
+  assert.equal(inventory.missingDriveSkus.length, 1);
+  assert.equal(inventory.missingDriveSkus[0], "W0027");
+});
+
+test("getMediaSyncInventory propagates Drive/API errors instead of treating them as missing folders", () => {
+  sandbox.getProducts = () => [{ sku: "W0001" }];
+  sandbox.getProductFilesResult = () => {
+    throw new Error("Drive API unavailable");
+  };
+
+  assert.throws(
+    () => sandbox.getMediaSyncInventory(),
+    /Drive API unavailable/
+  );
+});
+
+test("syncMedia performs all uploads before deletions and publishes manifest last", () => {
+  const calls = [];
+
+  sandbox.buildCurrentMediaSyncPlan = () => ({
+    operations: [
+      {
+        action: "delete",
+        sku: "W0001",
+        file: { name: "old.jpg", path: "images/W0001/old.jpg" }
+      },
+      {
+        action: "upload",
+        sku: "W0001",
+        file: driveFile("new.jpg")
+      }
+    ],
+    warnings: [],
+    manifest: { W0001: [driveFile("new.jpg")] }
+  });
+  sandbox.getDriveFileBytes = () => ({
+    name: "new.jpg",
+    bytes: [1, 2, 3]
+  });
+  sandbox.publishFile = file => {
+    calls.push(file.fileName.startsWith("images/") ? "upload" : "other-publish");
+    return true;
+  };
+  sandbox.deleteFile = () => {
+    calls.push("delete");
+    return true;
+  };
+  sandbox.publishMediaManifest = () => {
+    calls.push("manifest");
+  };
+
+  sandbox.syncMedia();
+
+  assert.deepEqual(calls, ["upload", "delete", "manifest"]);
+});
+
+test("syncMedia stops before deletions and manifest publication when an upload fails", () => {
+  const calls = [];
+
+  sandbox.buildCurrentMediaSyncPlan = () => ({
+    operations: [
+      {
+        action: "upload",
+        sku: "W0001",
+        file: driveFile("new.jpg")
+      },
+      {
+        action: "delete",
+        sku: "W0001",
+        file: { name: "old.jpg", path: "images/W0001/old.jpg" }
+      }
+    ],
+    warnings: [],
+    manifest: { W0001: [driveFile("new.jpg")] }
+  });
+  sandbox.getDriveFileBytes = () => ({
+    name: "new.jpg",
+    bytes: [1, 2, 3]
+  });
+  sandbox.publishFile = () => {
+    calls.push("upload");
+    throw new Error("GitHub upload failed");
+  };
+  sandbox.deleteFile = () => {
+    calls.push("delete");
+  };
+  sandbox.publishMediaManifest = () => {
+    calls.push("manifest");
+  };
+
+  assert.throws(() => sandbox.syncMedia(), /GitHub upload failed/);
+  assert.deepEqual(calls, ["upload"]);
+});
+
+test("syncMedia preserves the manifest and avoids deletions when a SKU folder is missing", () => {
+  const calls = [];
+  const previousImages = [driveFile("1.jpg"), driveFile("2.jpg")];
+
+  sandbox.buildCurrentMediaSyncPlan = () => ({
+    operations: [],
+    warnings: [{ type: "missing-drive-folder", sku: "W0027" }],
+    manifest: { W0027: previousImages }
+  });
+  sandbox.publishMediaManifest = manifest => {
+    calls.push("manifest");
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(manifest)).W0027.map(file => file.name),
+      ["1.jpg", "2.jpg"]
+    );
+  };
+  sandbox.deleteFile = () => calls.push("delete");
+
+  const report = sandbox.syncMedia();
+
+  assert.deepEqual(calls, ["manifest"]);
+  assert.match(report, /W0027/);
+});
