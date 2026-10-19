@@ -557,8 +557,29 @@ function testGetFileSha() {
 
 function publishDataJS(products) {
 
+  // Use the same missing-folder safeguards as media refresh.
+  // This preserves previously published image paths when a SKU's
+  // Drive folder is missing, while allowing real Drive/API errors
+  // to abort publication instead of silently publishing empty data.
+  const inventory =
+    getMediaSyncInventory(products);
+
+  const previousManifest =
+    getPublishedMediaManifest();
+
   const manifest =
-  getMediaManifest(products);
+    mergeMediaManifests(
+      inventory.driveManifest,
+      previousManifest,
+      inventory.missingDriveSkus
+    );
+
+  inventory.missingDriveSkus.forEach(sku => {
+    Logger.log(
+      "WARNING: Drive folder missing for SKU " + sku +
+      "; preserving previously published image paths in data.js."
+    );
+  });
 
   const file =
     generateDataJS(
@@ -567,9 +588,9 @@ function publishDataJS(products) {
     );
 
   publishFile(
-  file,
-  "Publish data.js"
-);
+    file,
+    "Publish data.js"
+  );
 
 }
 
