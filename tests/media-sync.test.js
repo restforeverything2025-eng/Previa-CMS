@@ -530,3 +530,15 @@ test("full audit hashes same-name files even when Drive metadata is unchanged", 
   assert.deepEqual(sandbox.__calls, ["upload", "manifest"]);
   assert.equal(JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).mode, "audit");
 });
+
+test("syncMedia does not advance the batch cursor when manifest publication fails", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }, { sku: "W0002" }],
+    {},
+    { W0001: [], W0002: [] },
+    () => ({ found: true, files: [driveFile("1.webp")] })
+  );
+  sandbox.publishMediaManifest = () => { throw new Error("Manifest publish failed"); };
+  assert.throws(() => sandbox.syncMedia(), /Manifest publish failed/);
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+});

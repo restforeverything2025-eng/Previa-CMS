@@ -19,6 +19,11 @@ function onOpen() {
       "refreshMedia"
     )
 
+    .addItem(
+      "⚙ Setup Media Audit Worker",
+      "setupMediaSyncAuditWorker"
+    )
+
     .addSeparator()
 
     .addItem(
