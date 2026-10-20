@@ -159,8 +159,24 @@ function getGitHubBlobSha(bytes) {
  * Reads all source state and builds a plan before syncMedia performs
  * any GitHub writes/deletes. Any non-missing-folder read error throws.
  */
-function buildCurrentMediaSyncPlan() {
-  const products = getProducts();
+/**
+ * Manifest metadata is a fast-path match only when stable Drive ID, size and
+ * last-updated timestamp all match. Otherwise hash the file before comparing.
+ */
+function isMediaFileMetadataUnchanged(file, previousFile) {
+  return Boolean(
+    file && previousFile && file.id && previousFile.id &&
+    file.id === previousFile.id &&
+    typeof file.size === "number" &&
+    typeof previousFile.size === "number" &&
+    file.size === previousFile.size &&
+    file.updated && previousFile.updated &&
+    file.updated === previousFile.updated
+  );
+}
+
+function buildCurrentMediaSyncPlan(productsOverride) {
+  const products = (productsOverride || getProducts()).slice();
   const inventory = getMediaSyncInventory(products);
   const previousManifest = getPublishedMediaManifest();
   const driveManifest = mergeMediaManifests(
@@ -173,15 +189,13 @@ function buildCurrentMediaSyncPlan() {
 
   Object.keys(inventory.driveManifest).forEach(sku => {
     const driveFiles = inventory.driveManifest[sku] || [];
-    const githubFiles = githubManifest[sku] || [];
+    const githubByName = new Map((githubManifest[sku] || []).map(item => [item.name, item]));
+    const previousByName = new Map((previousManifest[sku] || []).map(item => [item.name, item]));
     driveBlobShas[sku] = {};
 
     driveFiles.forEach(file => {
-      const githubFile = githubFiles.find(item => item.name === file.name);
-      if (!githubFile) {
-        return;
-      }
-
+      if (!githubByName.has(file.name)) return;
+      if (isMediaFileMetadataUnchanged(file, previousByName.get(file.name))) return;
       const driveFile = getDriveFileBytes(file.id);
       driveBlobShas[sku][file.name] = getGitHubBlobSha(driveFile.bytes);
     });
@@ -194,11 +208,7 @@ function buildCurrentMediaSyncPlan() {
     missingDriveSkus: inventory.missingDriveSkus
   });
 
-  return {
-    operations: plan.operations,
-    warnings: plan.warnings,
-    manifest: driveManifest
-  };
+  return { operations: plan.operations, warnings: plan.warnings, manifest: driveManifest };
 }
 
 function compareMediaManifest() {
@@ -225,86 +235,191 @@ function testPublishMediaManifest() {
  * attempted. The manifest is published only after every planned
  * operation succeeds, and retains entries for skipped/missing SKUs.
  */
-function syncMedia() {
-  const plan = buildCurrentMediaSyncPlan();
-  const operations = plan.operations;
-  const uploadedFiles = [];
-  const deletedFiles = [];
+const MEDIA_SYNC_STATE_PROPERTY = "PREVIA_MEDIA_SYNC_STATE_V1";
+const MEDIA_SYNC_BATCH_SIZE = 3;
+const MEDIA_SYNC_CONTINUATION_HANDLER = "continueMediaSync";
 
-  plan.warnings.forEach(warning => {
-    Logger.log(
-      "WARNING: Drive folder missing for SKU " + warning.sku +
-      "; keeping previously published images and manifest entry."
-    );
+function getMediaSyncState() {
+  const raw = PropertiesService.getScriptProperties().getProperty(MEDIA_SYNC_STATE_PROPERTY);
+  if (!raw) return { lastSku: "", startedAt: "" };
+  const state = JSON.parse(raw);
+  if (!state || typeof state.lastSku !== "string") {
+    throw new Error("Invalid persisted media-sync state. Refusing to reset progress automatically.");
+  }
+  return state;
+}
+
+function saveMediaSyncState(state) {
+  PropertiesService.getScriptProperties().setProperty(MEDIA_SYNC_STATE_PROPERTY, JSON.stringify(state));
+}
+
+function clearMediaSyncState() {
+  PropertiesService.getScriptProperties().deleteProperty(MEDIA_SYNC_STATE_PROPERTY);
+}
+
+function selectMediaSyncBatch(products, lastSku, batchSize) {
+  const size = batchSize || MEDIA_SYNC_BATCH_SIZE;
+  const sorted = (products || []).slice().sort((a, b) =>
+    String(a.sku || "").localeCompare(String(b.sku || ""), undefined, {
+      numeric: true,
+      sensitivity: "base"
+    })
+  );
+  const remaining = sorted.filter(product =>
+    String(product.sku || "").localeCompare(String(lastSku || ""), undefined, {
+      numeric: true,
+      sensitivity: "base"
+    }) > 0
+  );
+  return { products: remaining.slice(0, size), hasMoreAfterBatch: remaining.length > size };
+}
+
+function ensureMediaSyncContinuation() {
+  const triggers = ScriptApp.getProjectTriggers();
+  const exists = triggers.some(trigger =>
+    trigger.getHandlerFunction() === MEDIA_SYNC_CONTINUATION_HANDLER
+  );
+  if (!exists) {
+    ScriptApp.newTrigger(MEDIA_SYNC_CONTINUATION_HANDLER)
+      .timeBased()
+      .after(60 * 1000)
+      .create();
+  }
+}
+
+function removeMediaSyncContinuationTriggers() {
+  ScriptApp.getProjectTriggers().forEach(trigger => {
+    if (trigger.getHandlerFunction() === MEDIA_SYNC_CONTINUATION_HANDLER) {
+      ScriptApp.deleteTrigger(trigger);
+    }
   });
+}
 
-  if (operations.length === 0) {
-    if (plan.warnings.length === 0) {
-      Logger.log("Media already synchronized.");
-      return "Media already synchronized.\n\nUploaded: 0\nDeleted: 0";
+function continueMediaSync() {
+  return syncMedia();
+}
+
+/**
+ * Each execution reconciles a small SKU batch. The cursor advances only after
+ * uploads, deletions and manifest publication all succeed. A one-shot trigger
+ * resumes the next batch without changing Dashboard or menu entry points.
+ */
+function syncMedia() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) {
+    return "Media synchronization is already running. Try again shortly.";
+  }
+
+  try {
+    const products = getProducts();
+    const state = getMediaSyncState();
+    const batch = selectMediaSyncBatch(products, state.lastSku, MEDIA_SYNC_BATCH_SIZE);
+
+    if (batch.products.length === 0) {
+      clearMediaSyncState();
+      removeMediaSyncContinuationTriggers();
+      Logger.log("Media synchronization completed.");
+      return "Media synchronization completed. No remaining batches.";
     }
 
-    // Even with no file operations, publish the merged manifest so
-    // missing SKUs retain their last known image list.
-    publishMediaManifest(plan.manifest);
-    return (
-      "Media synchronization completed with warnings." +
-      "\n\nUploaded: 0\nDeleted: 0" +
-      "\n\nSkipped SKUs: " +
-      plan.warnings.map(item => item.sku).join(", ")
-    );
+    const previousManifest = getPublishedMediaManifest();
+    const githubManifest = getRepositoryImages();
+    const batchDriveManifest = {};
+    const missingDriveSkus = [];
+    const driveBlobShas = {};
+    const batchSkus = new Set(batch.products.map(product => String(product.sku)));
+
+    batch.products.forEach(product => {
+      const sku = String(product.sku);
+      const result = getProductFilesResult(sku);
+      if (!result.found) {
+        missingDriveSkus.push(sku);
+        return;
+      }
+
+      batchDriveManifest[sku] = result.files;
+      const previousByName = new Map((previousManifest[sku] || []).map(file => [file.name, file]));
+      const githubByName = new Map((githubManifest[sku] || []).map(file => [file.name, file]));
+      driveBlobShas[sku] = {};
+
+      result.files.forEach(file => {
+        if (!githubByName.has(file.name)) return;
+        if (isMediaFileMetadataUnchanged(file, previousByName.get(file.name))) return;
+        const driveFile = getDriveFileBytes(file.id);
+        driveBlobShas[sku][file.name] = getGitHubBlobSha(driveFile.bytes);
+      });
+    });
+
+    // Preserve entries for all SKUs not visited in this batch.
+    const batchManifest = {};
+    Object.keys(previousManifest).forEach(sku => { batchManifest[sku] = previousManifest[sku]; });
+    Object.keys(batchDriveManifest).forEach(sku => { batchManifest[sku] = batchDriveManifest[sku]; });
+    missingDriveSkus.forEach(sku => {
+      if (Object.prototype.hasOwnProperty.call(previousManifest, sku)) {
+        batchManifest[sku] = previousManifest[sku];
+      }
+    });
+
+    const plan = buildMediaSyncPlan({
+      driveManifest: batchManifest,
+      githubManifest: githubManifest,
+      driveBlobShas: driveBlobShas,
+      missingDriveSkus: missingDriveSkus
+    });
+    const operations = plan.operations.filter(operation => batchSkus.has(String(operation.sku)));
+    const uploads = operations.filter(operation => operation.action === "upload");
+    const deletions = operations.filter(operation => operation.action === "delete");
+    const uploadedFiles = [];
+    const deletedFiles = [];
+
+    // Upload every new/replaced image in this batch before deleting old files.
+    uploads.forEach(operation => {
+      const driveFile = getDriveFileBytes(operation.file.id);
+      const filePath = operation.sku + "/" + driveFile.name;
+      publishFile({
+        fileName: "images/" + filePath,
+        bytes: driveFile.bytes,
+        binary: true
+      }, "Upload image " + filePath);
+      uploadedFiles.push(filePath);
+    });
+
+    deletions.forEach(operation => {
+      const filePath = operation.sku + "/" + operation.file.name;
+      deleteFile(operation.file.path, "Delete image " + filePath);
+      deletedFiles.push(filePath);
+    });
+
+    // If a mutation or manifest publication fails, the cursor does not advance.
+    publishMediaManifest(batchManifest);
+    const lastSku = String(batch.products[batch.products.length - 1].sku);
+    saveMediaSyncState({
+      lastSku: lastSku,
+      startedAt: state.startedAt || new Date().toISOString()
+    });
+    ensureMediaSyncContinuation();
+
+    const warnings = plan.warnings.filter(warning => batchSkus.has(String(warning.sku)));
+    warnings.forEach(warning => Logger.log(
+      "WARNING: Drive folder missing for SKU " + warning.sku +
+      "; keeping previously published images and manifest entry."
+    ));
+
+    let report = batch.hasMoreAfterBatch
+      ? "Media synchronization batch completed; continuing automatically."
+      : "Final media synchronization batch completed; verifying completion.";
+    report += "\n\nProcessed SKUs: " + batch.products.length;
+    report += "\nUploaded: " + uploadedFiles.length;
+    if (uploadedFiles.length) report += "\n  • " + uploadedFiles.join("\n  • ");
+    report += "\nDeleted: " + deletedFiles.length;
+    if (deletedFiles.length) report += "\n  • " + deletedFiles.join("\n  • ");
+    if (warnings.length) {
+      report += "\nSkipped SKUs (Drive folder missing): " + warnings.map(item => item.sku).join(", ");
+    }
+    return report;
+  } finally {
+    lock.releaseLock();
   }
-
-  const uploads = operations.filter(operation => operation.action === "upload");
-  const deletions = operations.filter(operation => operation.action === "delete");
-
-  uploads.forEach(operation => {
-    const driveFile = getDriveFileBytes(operation.file.id);
-    const filePath = operation.sku + "/" + driveFile.name;
-
-    publishFile({
-      fileName: "images/" + filePath,
-      bytes: driveFile.bytes,
-      binary: true
-    }, "Upload image " + filePath);
-
-    uploadedFiles.push(filePath);
-    Logger.log("Uploaded: " + filePath);
-  });
-
-  deletions.forEach(operation => {
-    const filePath = operation.sku + "/" + operation.file.name;
-
-    deleteFile(operation.file.path, "Delete image " + filePath);
-    deletedFiles.push(filePath);
-    Logger.log("Deleted: " + filePath);
-  });
-
-  // Do not publish a new manifest unless all planned mutations succeeded.
-  publishMediaManifest(plan.manifest);
-
-  Logger.log("Media synchronization completed.");
-
-  let report = plan.warnings.length
-    ? "Media synchronization completed with warnings."
-    : "Media synchronization completed.";
-
-  report += "\n\nUploaded: " + uploadedFiles.length;
-  if (uploadedFiles.length > 0) {
-    report += "\n  • " + uploadedFiles.join("\n  • ");
-  }
-
-  report += "\n\nDeleted: " + deletedFiles.length;
-  if (deletedFiles.length > 0) {
-    report += "\n  • " + deletedFiles.join("\n  • ");
-  }
-
-  if (plan.warnings.length > 0) {
-    report += "\n\nSkipped SKUs (Drive folder missing): " +
-      plan.warnings.map(item => item.sku).join(", ");
-  }
-
-  return report;
 }
 
 function testSyncMedia() {

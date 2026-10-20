@@ -56,6 +56,32 @@ function githubFile(name, sha = "sha-same", sku = "W0001") {
   };
 }
 
+function stubBatchRuntime(products, previousManifest, githubManifest, driveResult) {
+  const properties = {};
+  sandbox.PropertiesService = { getScriptProperties: () => ({
+    getProperty: key => properties[key] || null,
+    setProperty: (key, value) => { properties[key] = value; },
+    deleteProperty: key => { delete properties[key]; }
+  }) };
+  sandbox.LockService = { getScriptLock: () => ({ tryLock: () => true, releaseLock() {} }) };
+  const triggers = [];
+  sandbox.ScriptApp = {
+    getProjectTriggers: () => triggers.slice(),
+    deleteTrigger: trigger => { const i = triggers.indexOf(trigger); if (i >= 0) triggers.splice(i, 1); },
+    newTrigger: handler => ({ timeBased() { return this; }, after() { return this; },
+      create() { triggers.push({ getHandlerFunction: () => handler }); } })
+  };
+  sandbox.getProducts = () => products;
+  sandbox.getPublishedMediaManifest = () => previousManifest;
+  sandbox.getRepositoryImages = () => githubManifest;
+  sandbox.getProductFilesResult = driveResult;
+  sandbox.publishMediaManifest = manifest => {
+    sandbox.__calls.push("manifest");
+    sandbox.__publishedManifest = manifest;
+  };
+  sandbox.__calls = [];
+  return { properties, triggers };
+}
 test("plans an upload for a new Drive image", () => {
   const result = plan({
     driveManifest: {
@@ -303,110 +329,50 @@ test("getMediaSyncInventory propagates Drive/API errors instead of treating them
   );
 });
 
-test("syncMedia performs all uploads before deletions and publishes manifest last", () => {
-  const calls = [];
-
-  sandbox.buildCurrentMediaSyncPlan = () => ({
-    operations: [
-      {
-        action: "delete",
-        sku: "W0001",
-        file: { name: "old.jpg", path: "images/W0001/old.jpg" }
-      },
-      {
-        action: "upload",
-        sku: "W0001",
-        file: driveFile("new.jpg")
-      }
-    ],
-    warnings: [],
-    manifest: { W0001: [driveFile("new.jpg")] }
-  });
-  sandbox.getDriveFileBytes = () => ({
-    name: "new.jpg",
-    bytes: [1, 2, 3]
-  });
-  sandbox.publishFile = file => {
-    calls.push(file.fileName.startsWith("images/") ? "upload" : "other-publish");
-    return true;
-  };
-  sandbox.deleteFile = () => {
-    calls.push("delete");
-    return true;
-  };
-  sandbox.publishMediaManifest = () => {
-    calls.push("manifest");
-  };
-
+test("syncMedia performs batch uploads before deletions and publishes manifest last", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }],
+    { W0001: [driveFile("old.jpg")] },
+    { W0001: [githubFile("old.jpg", "old-sha")] },
+    () => ({ found: true, files: [driveFile("new.jpg")] })
+  );
+  sandbox.getDriveFileBytes = fileId => ({ name: fileId === "drive-new.jpg" ? "new.jpg" : "old.jpg", bytes: [1, 2, 3] });
+  sandbox.publishFile = file => { sandbox.__calls.push(file.fileName.startsWith("images/") ? "upload" : "other"); };
+  sandbox.deleteFile = () => { sandbox.__calls.push("delete"); };
   sandbox.syncMedia();
-
-  assert.deepEqual(calls, ["upload", "delete", "manifest"]);
-});
-
-test("syncMedia stops before deletions and manifest publication when an upload fails", () => {
-  const calls = [];
-
-  sandbox.buildCurrentMediaSyncPlan = () => ({
-    operations: [
-      {
-        action: "upload",
-        sku: "W0001",
-        file: driveFile("new.jpg")
-      },
-      {
-        action: "delete",
-        sku: "W0001",
-        file: { name: "old.jpg", path: "images/W0001/old.jpg" }
-      }
-    ],
-    warnings: [],
-    manifest: { W0001: [driveFile("new.jpg")] }
-  });
-  sandbox.getDriveFileBytes = () => ({
-    name: "new.jpg",
-    bytes: [1, 2, 3]
-  });
-  sandbox.publishFile = () => {
-    calls.push("upload");
-    throw new Error("GitHub upload failed");
-  };
-  sandbox.deleteFile = () => {
-    calls.push("delete");
-  };
-  sandbox.publishMediaManifest = () => {
-    calls.push("manifest");
-  };
-
+  assert.deepEqual(sandbox.__calls, ["upload", "delete", "manifest"]);
+  assert.equal(JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).lastSku, "W0001");
+});test("syncMedia stops before deletions and manifest publication when an upload fails", () => {
+  stubBatchRuntime(
+    [{ sku: "W0001" }],
+    { W0001: [driveFile("old.jpg")] },
+    { W0001: [githubFile("old.jpg", "old-sha")] },
+    () => ({ found: true, files: [driveFile("new.jpg")] })
+  );
+  sandbox.getDriveFileBytes = () => ({ name: "new.jpg", bytes: [1, 2, 3] });
+  const calls = sandbox.__calls;
+  sandbox.publishFile = () => { calls.push("upload"); throw new Error("GitHub upload failed"); };
+  sandbox.deleteFile = () => calls.push("delete");
+  sandbox.publishMediaManifest = () => calls.push("manifest");
   assert.throws(() => sandbox.syncMedia(), /GitHub upload failed/);
   assert.deepEqual(calls, ["upload"]);
-});
-
-test("syncMedia preserves the manifest and avoids deletions when a SKU folder is missing", () => {
-  const calls = [];
+});test("syncMedia preserves the manifest and avoids deletions when a SKU folder is missing", () => {
   const previousImages = [driveFile("1.jpg"), driveFile("2.jpg")];
-
-  sandbox.buildCurrentMediaSyncPlan = () => ({
-    operations: [],
-    warnings: [{ type: "missing-drive-folder", sku: "W0027" }],
-    manifest: { W0027: previousImages }
-  });
-  sandbox.publishMediaManifest = manifest => {
-    calls.push("manifest");
-    assert.deepEqual(
-      JSON.parse(JSON.stringify(manifest)).W0027.map(file => file.name),
-      ["1.jpg", "2.jpg"]
-    );
-  };
-  sandbox.deleteFile = () => calls.push("delete");
-
+  stubBatchRuntime(
+    [{ sku: "W0027" }],
+    { W0027: previousImages },
+    { W0027: [githubFile("1.jpg", "sha-1", "W0027"), githubFile("2.jpg", "sha-2", "W0027")] },
+    () => ({ found: false, files: [] })
+  );
+  sandbox.deleteFile = () => sandbox.__calls.push("delete");
   const report = sandbox.syncMedia();
-
-  assert.deepEqual(calls, ["manifest"]);
+  assert.deepEqual(sandbox.__calls, ["manifest"]);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(sandbox.__publishedManifest)).W0027.map(file => file.name),
+    ["1.jpg", "2.jpg"]
+  );
   assert.match(report, /W0027/);
-});
-
-
-test("buildCurrentMediaSyncPlan preserves missing SKU images and still plans healthy SKUs", () => {
+});test("buildCurrentMediaSyncPlan preserves missing SKU images and still plans healthy SKUs", () => {
   sandbox.getProducts = () => [{ sku: "W0027" }, { sku: "W0001" }];
   sandbox.getProductFilesResult = sku => {
     if (sku === "W0027") return { found: false, files: [] };
@@ -449,4 +415,31 @@ test("mergeMediaManifests does not invent an empty entry when a missing SKU has 
   ));
 
   assert.equal(Object.prototype.hasOwnProperty.call(merged, "W0027"), false);
+});
+
+test("metadata fast path skips downloading bytes for unchanged files", () => {
+  assert.equal(sandbox.isMediaFileMetadataUnchanged(
+    driveFile("1.webp", "same-id"), driveFile("1.webp", "same-id")
+  ), true);
+});
+
+test("metadata comparison requires same Drive ID, size and updated timestamp", () => {
+  const previous = driveFile("1.webp", "same-id");
+  assert.equal(sandbox.isMediaFileMetadataUnchanged({ ...previous, size: 101 }, previous), false);
+  assert.equal(sandbox.isMediaFileMetadataUnchanged(
+    { ...previous, updated: "2026-10-20T10:00:00.000Z" }, previous
+  ), false);
+  assert.equal(sandbox.isMediaFileMetadataUnchanged(
+    driveFile("1.webp", "different-id"), previous
+  ), false);
+});
+
+test("media sync batches use numeric SKU ordering and resume after the last SKU", () => {
+  const products = [{ sku: "W10" }, { sku: "W2" }, { sku: "W1" }, { sku: "W3" }];
+  const first = JSON.parse(JSON.stringify(sandbox.selectMediaSyncBatch(products, "", 2)));
+  assert.deepEqual(first.products.map(product => product.sku), ["W1", "W2"]);
+  assert.equal(first.hasMoreAfterBatch, true);
+  const second = JSON.parse(JSON.stringify(sandbox.selectMediaSyncBatch(products, "W2", 2)));
+  assert.deepEqual(second.products.map(product => product.sku), ["W3", "W10"]);
+  assert.equal(second.hasMoreAfterBatch, false);
 });
