@@ -479,33 +479,6 @@ test("current planner hashes and uploads a same-name image when Drive metadata c
   assert.equal(result.operations[0].file.name, "1.webp");
 });
 
-test("current planner skips Drive byte reads when manifest metadata matches", () => {
-  const current = driveFile("1.webp", "drive-1");
-  sandbox.getProducts = () => [{ sku: "W0001" }];
-  sandbox.getProductFilesResult = () => ({ found: true, files: [current] });
-  sandbox.getPublishedMediaManifest = () => ({ W0001: [driveFile("1.webp", "drive-1")] });
-  sandbox.getRepositoryImages = () => ({ W0001: [githubFile("1.webp", "same-blob")] });
-  sandbox.getDriveFileBytes = () => { throw new Error("unchanged file bytes should not be read"); };
-  const result = JSON.parse(JSON.stringify(sandbox.buildCurrentMediaSyncPlan()));
-  assert.deepEqual(result.operations, []);
-});
-
-test("current planner hashes and uploads a same-name image when Drive metadata changed", () => {
-  const current = { ...driveFile("1.webp", "drive-1"), updated: "2026-10-20T12:00:00.000Z" };
-  sandbox.getProducts = () => [{ sku: "W0001" }];
-  sandbox.getProductFilesResult = () => ({ found: true, files: [current] });
-  sandbox.getPublishedMediaManifest = () => ({
-    W0001: [{ ...driveFile("1.webp", "drive-1"), updated: "2026-10-19T10:00:00.000Z" }]
-  });
-  sandbox.getRepositoryImages = () => ({ W0001: [githubFile("1.webp", "old-blob")] });
-  sandbox.getDriveFileBytes = () => ({ name: "1.webp", bytes: [1, 2, 3] });
-  sandbox.getGitHubBlobSha = () => "new-blob";
-  const result = JSON.parse(JSON.stringify(sandbox.buildCurrentMediaSyncPlan()));
-  assert.equal(result.operations.length, 1);
-  assert.equal(result.operations[0].action, "upload");
-  assert.equal(result.operations[0].file.name, "1.webp");
-});
-
 test("full audit hashes same-name files even when Drive metadata is unchanged", () => {
   const file = driveFile("1.webp", "drive-1");
   const runtime = stubBatchRuntime(

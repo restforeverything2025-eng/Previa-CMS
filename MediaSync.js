@@ -373,6 +373,8 @@ function syncMedia() {
     const batchDriveManifest = {};
     const missingDriveSkus = [];
     const driveBlobShas = {};
+    // Reuse bytes read for content hashing when the same file is uploaded.
+    const driveBytesBySkuAndName = {};
     const batchSkus = new Set(batch.products.map(product => String(product.sku)));
 
     batch.products.forEach(product => {
@@ -393,6 +395,8 @@ function syncMedia() {
         if (state.mode !== "audit" &&
             isMediaFileMetadataUnchanged(file, previousByName.get(file.name))) return;
         const driveFile = getDriveFileBytes(file.id);
+        if (!driveBytesBySkuAndName[sku]) driveBytesBySkuAndName[sku] = {};
+        driveBytesBySkuAndName[sku][file.name] = driveFile;
         driveBlobShas[sku][file.name] = getGitHubBlobSha(driveFile.bytes);
       });
     });
@@ -421,7 +425,8 @@ function syncMedia() {
 
     // Upload every new/replaced image in this batch before deleting old files.
     uploads.forEach(operation => {
-      const driveFile = getDriveFileBytes(operation.file.id);
+      const cachedDriveFiles = driveBytesBySkuAndName[String(operation.sku)] || {};
+      const driveFile = cachedDriveFiles[operation.file.name] || getDriveFileBytes(operation.file.id);
       const filePath = operation.sku + "/" + driveFile.name;
       publishFile({
         fileName: "images/" + filePath,
