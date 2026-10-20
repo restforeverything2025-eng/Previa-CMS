@@ -156,8 +156,9 @@ function getGitHubBlobSha(bytes) {
 }
 
 /**
- * Reads all source state and builds a plan before syncMedia performs
- * any GitHub writes/deletes. Any non-missing-folder read error throws.
+ * Diagnostic full-catalog planner used by compare/test helpers. The production
+ * syncMedia path uses bounded SKU batches below to avoid one long execution.
+ * Any non-missing-folder read error throws before this planner returns.
  */
 /**
  * Manifest metadata is a fast-path match only when stable Drive ID, size and
@@ -238,6 +239,8 @@ function testPublishMediaManifest() {
 const MEDIA_SYNC_STATE_PROPERTY = "PREVIA_MEDIA_SYNC_STATE_V1";
 const MEDIA_SYNC_BATCH_SIZE = 3;
 const MEDIA_SYNC_CONTINUATION_HANDLER = "continueMediaSync";
+const MEDIA_SYNC_AUDIT_HANDLER = "startMediaSyncAudit";
+const MEDIA_SYNC_AUDIT_INTERVAL_DAYS = 30;
 
 function getMediaSyncState() {
   const raw = PropertiesService.getScriptProperties().getProperty(MEDIA_SYNC_STATE_PROPERTY);
@@ -272,6 +275,49 @@ function selectMediaSyncBatch(products, lastSku, batchSize) {
     }) > 0
   );
   return { products: remaining.slice(0, size), hasMoreAfterBatch: remaining.length > size };
+}
+
+function setupMediaSyncAuditWorker() {
+  ScriptApp.getProjectTriggers().forEach(trigger => {
+    if (trigger.getHandlerFunction() === MEDIA_SYNC_AUDIT_HANDLER) {
+      ScriptApp.deleteTrigger(trigger);
+    }
+  });
+  ScriptApp.newTrigger(MEDIA_SYNC_AUDIT_HANDLER)
+    .timeBased()
+    .everyDays(MEDIA_SYNC_AUDIT_INTERVAL_DAYS)
+    .create();
+  return "Full media audit scheduled every " + MEDIA_SYNC_AUDIT_INTERVAL_DAYS + " days.";
+}
+
+/**
+ * Start a full content audit. Unlike ordinary sync, this mode hashes every
+ * Drive image that has a same-name GitHub counterpart, in resumable batches.
+ * If another sync is already pending, leave its progress intact.
+ */
+function startMediaSyncAudit() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) {
+    Logger.log("Full media audit skipped: media synchronization is already running.");
+    return "Media synchronization is already running; full audit was not started.";
+  }
+
+  try {
+    const properties = PropertiesService.getScriptProperties();
+    if (properties.getProperty(MEDIA_SYNC_STATE_PROPERTY)) {
+      Logger.log("Full media audit skipped: a media sync is already pending.");
+      return "A media sync is already pending; full audit was not started.";
+    }
+    properties.setProperty(MEDIA_SYNC_STATE_PROPERTY, JSON.stringify({
+      lastSku: "",
+      startedAt: new Date().toISOString(),
+      mode: "audit"
+    }));
+  } finally {
+    lock.releaseLock();
+  }
+
+  return syncMedia();
 }
 
 function ensureMediaSyncContinuation() {
@@ -344,7 +390,8 @@ function syncMedia() {
 
       result.files.forEach(file => {
         if (!githubByName.has(file.name)) return;
-        if (isMediaFileMetadataUnchanged(file, previousByName.get(file.name))) return;
+        if (state.mode !== "audit" &&
+            isMediaFileMetadataUnchanged(file, previousByName.get(file.name))) return;
         const driveFile = getDriveFileBytes(file.id);
         driveBlobShas[sku][file.name] = getGitHubBlobSha(driveFile.bytes);
       });
@@ -395,7 +442,8 @@ function syncMedia() {
     const lastSku = String(batch.products[batch.products.length - 1].sku);
     saveMediaSyncState({
       lastSku: lastSku,
-      startedAt: state.startedAt || new Date().toISOString()
+      startedAt: state.startedAt || new Date().toISOString(),
+      mode: state.mode || "normal"
     });
     ensureMediaSyncContinuation();
 
