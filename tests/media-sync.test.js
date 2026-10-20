@@ -342,7 +342,9 @@ test("syncMedia performs batch uploads before deletions and publishes manifest l
   sandbox.syncMedia();
   assert.deepEqual(sandbox.__calls, ["upload", "delete", "manifest"]);
   assert.equal(JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).lastSku, "W0001");
-});test("syncMedia stops before deletions and manifest publication when an upload fails", () => {
+});
+
+test("syncMedia stops before deletions and manifest publication when an upload fails", () => {
   stubBatchRuntime(
     [{ sku: "W0001" }],
     { W0001: [driveFile("old.jpg")] },
@@ -356,7 +358,9 @@ test("syncMedia performs batch uploads before deletions and publishes manifest l
   sandbox.publishMediaManifest = () => calls.push("manifest");
   assert.throws(() => sandbox.syncMedia(), /GitHub upload failed/);
   assert.deepEqual(calls, ["upload"]);
-});test("syncMedia preserves the manifest and avoids deletions when a SKU folder is missing", () => {
+});
+
+test("syncMedia preserves the manifest and avoids deletions when a SKU folder is missing", () => {
   const previousImages = [driveFile("1.jpg"), driveFile("2.jpg")];
   stubBatchRuntime(
     [{ sku: "W0027" }],
@@ -372,7 +376,9 @@ test("syncMedia performs batch uploads before deletions and publishes manifest l
     ["1.jpg", "2.jpg"]
   );
   assert.match(report, /W0027/);
-});test("buildCurrentMediaSyncPlan preserves missing SKU images and still plans healthy SKUs", () => {
+});
+
+test("buildCurrentMediaSyncPlan preserves missing SKU images and still plans healthy SKUs", () => {
   sandbox.getProducts = () => [{ sku: "W0027" }, { sku: "W0001" }];
   sandbox.getProductFilesResult = sku => {
     if (sku === "W0027") return { found: false, files: [] };
@@ -442,4 +448,33 @@ test("media sync batches use numeric SKU ordering and resume after the last SKU"
   const second = JSON.parse(JSON.stringify(sandbox.selectMediaSyncBatch(products, "W2", 2)));
   assert.deepEqual(second.products.map(product => product.sku), ["W3", "W10"]);
   assert.equal(second.hasMoreAfterBatch, false);
+});
+
+test("current planner skips Drive byte reads when manifest metadata matches", () => {
+  const current = driveFile("1.webp", "drive-1");
+  sandbox.getProducts = () => [{ sku: "W0001" }];
+  sandbox.getProductFilesResult = () => ({ found: true, files: [current] });
+  sandbox.getPublishedMediaManifest = () => ({ W0001: [driveFile("1.webp", "drive-1")] });
+  sandbox.getRepositoryImages = () => ({ W0001: [githubFile("1.webp", "same-blob")] });
+  sandbox.getDriveFileBytes = () => { throw new Error("unchanged file bytes should not be read"); };
+
+  const result = JSON.parse(JSON.stringify(sandbox.buildCurrentMediaSyncPlan()));
+  assert.deepEqual(result.operations, []);
+});
+
+test("current planner hashes and uploads a same-name image when Drive metadata changed", () => {
+  const current = { ...driveFile("1.webp", "drive-1"), updated: "2026-10-20T12:00:00.000Z" };
+  sandbox.getProducts = () => [{ sku: "W0001" }];
+  sandbox.getProductFilesResult = () => ({ found: true, files: [current] });
+  sandbox.getPublishedMediaManifest = () => ({
+    W0001: [{ ...driveFile("1.webp", "drive-1"), updated: "2026-10-19T10:00:00.000Z" }]
+  });
+  sandbox.getRepositoryImages = () => ({ W0001: [githubFile("1.webp", "old-blob")] });
+  sandbox.getDriveFileBytes = () => ({ name: "1.webp", bytes: [1, 2, 3] });
+  sandbox.getGitHubBlobSha = () => "new-blob";
+
+  const result = JSON.parse(JSON.stringify(sandbox.buildCurrentMediaSyncPlan()));
+  assert.equal(result.operations.length, 1);
+  assert.equal(result.operations[0].action, "upload");
+  assert.equal(result.operations[0].file.name, "1.webp");
 });
