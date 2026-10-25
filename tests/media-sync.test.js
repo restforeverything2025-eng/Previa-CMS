@@ -80,6 +80,7 @@ function stubBatchRuntime(products, previousManifest, githubManifest, driveResul
     sandbox.__publishedManifest = manifest;
   };
   sandbox.__calls = [];
+  sandbox.__publishedManifest = undefined;
   return { properties, triggers };
 }
 test("plans an upload for a new Drive image", () => {
@@ -559,7 +560,15 @@ test("syncMedia does not advance the batch cursor when manifest publication fail
   );
   sandbox.publishMediaManifest = () => { throw new Error("Manifest publish failed"); };
   assert.throws(() => sandbox.syncMedia(), /Manifest publish failed/);
-  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+
+  const savedState = JSON.parse(
+    runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1
+  );
+  assert.equal(savedState.lastSku, "");
+  assert.equal(savedState.retryCount, 1);
+  assert.equal(savedState.lastError, "Manifest publish failed");
+  assert.equal(runtime.triggers.length, 1);
+  assert.equal(runtime.triggers[0].delayMs, 5 * 60 * 1000);
 });
 
 
