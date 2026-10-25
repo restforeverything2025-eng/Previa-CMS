@@ -679,7 +679,7 @@ test("a later-batch failure preserves the successful cursor and schedules a dela
   assert.match(state.lastError, /temporary Drive outage/);
   assert.equal(runtime.triggers.length, 1);
   assert.equal(runtime.triggers[0].getHandlerFunction(), "continueMediaSync");
-  assert.equal(runtime.triggers[0].delayMs, sandbox.MEDIA_SYNC_RETRY_DELAY_MS);
+  assert.equal(runtime.triggers[0].delayMs, 5 * 60 * 1000);
 });
 
 test("a transient failure can recover and finish without restarting completed batches", () => {
@@ -708,7 +708,8 @@ test("persistent failures stop after the configured retry limit and remove pendi
     () => { throw new Error("permanent permission denied"); }
   );
 
-  for (let attempt = 1; attempt <= sandbox.MEDIA_SYNC_MAX_RETRIES; attempt += 1) {
+  const maxRetries = vm.runInContext("MEDIA_SYNC_MAX_RETRIES", sandbox);
+  for (let attempt = 1; attempt <= maxRetries; attempt += 1) {
     assert.throws(() => sandbox.syncMedia(), /permanent permission denied/);
     const state = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
     assert.equal(state.retryCount, attempt);
