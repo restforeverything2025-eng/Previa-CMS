@@ -321,16 +321,14 @@ function startMediaSyncAudit() {
 }
 
 function ensureMediaSyncContinuation() {
-  const triggers = ScriptApp.getProjectTriggers();
-  const exists = triggers.some(trigger =>
-    trigger.getHandlerFunction() === MEDIA_SYNC_CONTINUATION_HANDLER
-  );
-  if (!exists) {
-    ScriptApp.newTrigger(MEDIA_SYNC_CONTINUATION_HANDLER)
-      .timeBased()
-      .after(60 * 1000)
-      .create();
-  }
+  // A one-shot trigger may still be listed while its handler is running.
+  // Replace all existing continuation triggers to guarantee a future run.
+  removeMediaSyncContinuationTriggers();
+
+  ScriptApp.newTrigger(MEDIA_SYNC_CONTINUATION_HANDLER)
+    .timeBased()
+    .after(60 * 1000)
+    .create();
 }
 
 function removeMediaSyncContinuationTriggers() {
@@ -442,15 +440,24 @@ function syncMedia() {
       deletedFiles.push(filePath);
     });
 
-    // If a mutation or manifest publication fails, the cursor does not advance.
+    // Publish the manifest only after all image mutations succeed.
+    // Do not advance the cursor unless manifest publication also succeeds.
     publishMediaManifest(batchManifest);
-    const lastSku = String(batch.products[batch.products.length - 1].sku);
-    saveMediaSyncState({
-      lastSku: lastSku,
-      startedAt: state.startedAt || new Date().toISOString(),
-      mode: state.mode || "normal"
-    });
-    ensureMediaSyncContinuation();
+
+    if (batch.hasMoreAfterBatch) {
+      const lastSku = String(batch.products[batch.products.length - 1].sku);
+      saveMediaSyncState({
+        lastSku: lastSku,
+        startedAt: state.startedAt || new Date().toISOString(),
+        mode: state.mode || "normal"
+      });
+      ensureMediaSyncContinuation();
+    } else {
+      // Complete on the last non-empty batch; do not schedule an unnecessary
+      // empty execution just to clear the cursor and continuation trigger.
+      clearMediaSyncState();
+      removeMediaSyncContinuationTriggers();
+    }
 
     const warnings = plan.warnings.filter(warning => batchSkus.has(String(warning.sku)));
     warnings.forEach(warning => Logger.log(
