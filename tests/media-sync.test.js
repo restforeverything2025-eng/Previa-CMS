@@ -371,13 +371,57 @@ test("syncMedia preserves the manifest and avoids deletions when a SKU folder is
   );
   sandbox.deleteFile = () => sandbox.__calls.push("delete");
   const report = sandbox.syncMedia();
-  assert.deepEqual(sandbox.__calls, ["manifest"]);
-  assert.deepEqual(
-    JSON.parse(JSON.stringify(sandbox.__publishedManifest)).W0027.map(file => file.name),
-    ["1.jpg", "2.jpg"]
-  );
+  // The missing Drive folder must neither delete images nor publish a no-op manifest.
+  assert.deepEqual(sandbox.__calls, []);
+  assert.equal(sandbox.__publishedManifest, undefined);
   assert.match(report, /W0027/);
 });
+
+
+test("syncMedia does not create a manifest commit for an unchanged batch", () => {
+  const current = driveFile("1.jpg", "drive-1");
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }],
+    { W0001: [current] },
+    { W0001: [githubFile("1.jpg", "same-sha")] },
+    () => ({ found: true, files: [current] })
+  );
+  sandbox.getDriveFileBytes = () => {
+    throw new Error("unchanged image bytes should not be read");
+  };
+
+  sandbox.syncMedia();
+
+  assert.deepEqual(sandbox.__calls, []);
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  assert.equal(runtime.triggers.length, 0);
+});
+
+
+test("syncMedia publishes manifest metadata changes even when image bytes are unchanged", () => {
+  const previous = driveFile("1.jpg", "drive-1");
+  const current = {
+    ...previous,
+    updated: "2026-10-20T12:00:00.000Z"
+  };
+  stubBatchRuntime(
+    [{ sku: "W0001" }],
+    { W0001: [previous] },
+    { W0001: [githubFile("1.jpg", "same-sha")] },
+    () => ({ found: true, files: [current] })
+  );
+  sandbox.getDriveFileBytes = () => ({ name: "1.jpg", bytes: [1, 2, 3] });
+  sandbox.getGitHubBlobSha = () => "same-sha";
+
+  sandbox.syncMedia();
+
+  assert.deepEqual(sandbox.__calls, ["manifest"]);
+  assert.equal(
+    sandbox.__publishedManifest.W0001[0].updated,
+    current.updated
+  );
+});
+
 
 test("buildCurrentMediaSyncPlan preserves missing SKU images and still plans healthy SKUs", () => {
   sandbox.getProducts = () => [{ sku: "W0027" }, { sku: "W0001" }];
