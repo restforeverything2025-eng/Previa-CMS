@@ -441,8 +441,12 @@ function syncMedia() {
     });
 
     // Publish the manifest only after all image mutations succeed.
-    // Do not advance the cursor unless manifest publication also succeeds.
-    publishMediaManifest(batchManifest);
+    // Skip a no-op GitHub commit when neither files nor manifest changed.
+    const manifestChanged =
+      JSON.stringify(batchManifest) !== JSON.stringify(previousManifest);
+    if (manifestChanged || operations.length > 0) {
+      publishMediaManifest(batchManifest);
+    }
 
     if (batch.hasMoreAfterBatch) {
       const lastSku = String(batch.products[batch.products.length - 1].sku);
