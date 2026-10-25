@@ -346,6 +346,14 @@ function removeMediaSyncContinuationTriggers() {
 }
 
 function continueMediaSync() {
+  // A delayed trigger can outlive the sync state after a competing execution
+  // finishes. Do not let that orphaned trigger accidentally start a new full sync.
+  const properties = PropertiesService.getScriptProperties();
+  if (!properties.getProperty(MEDIA_SYNC_STATE_PROPERTY)) {
+    removeMediaSyncContinuationTriggers();
+    return "No pending media synchronization.";
+  }
+
   return syncMedia();
 }
 
@@ -357,6 +365,21 @@ function continueMediaSync() {
 function syncMedia() {
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(1000)) {
+    // A continuation trigger may collide with another Apps Script execution
+    // that is not itself responsible for resuming this media sync. If there is
+    // persisted progress, arrange another attempt; the handler checks state
+    // before running so an orphaned trigger cannot restart a completed sync.
+    try {
+      const properties = PropertiesService.getScriptProperties();
+      if (properties.getProperty(MEDIA_SYNC_STATE_PROPERTY)) {
+        ensureMediaSyncContinuation(MEDIA_SYNC_RETRY_DELAY_MS);
+      }
+    } catch (recoveryError) {
+      Logger.log(
+        "Could not reschedule media sync after lock contention: " +
+        String(recoveryError && recoveryError.message ? recoveryError.message : recoveryError)
+      );
+    }
     return "Media synchronization is already running. Try again shortly.";
   }
 
