@@ -341,7 +341,8 @@ test("syncMedia performs batch uploads before deletions and publishes manifest l
   sandbox.deleteFile = () => { sandbox.__calls.push("delete"); };
   sandbox.syncMedia();
   assert.deepEqual(sandbox.__calls, ["upload", "delete", "manifest"]);
-  assert.equal(JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).lastSku, "W0001");
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  assert.equal(runtime.triggers.length, 0);
 });
 
 test("syncMedia stops before deletions and manifest publication when an upload fails", () => {
