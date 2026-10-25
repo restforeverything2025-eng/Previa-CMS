@@ -515,3 +515,98 @@ test("syncMedia does not advance the batch cursor when manifest publication fail
   assert.throws(() => sandbox.syncMedia(), /Manifest publish failed/);
   assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
 });
+
+
+test("replaces a listed continuation trigger instead of mistaking it for a future run", () => {
+  const products = [
+    { sku: "W0001" },
+    { sku: "W0002" },
+    { sku: "W0003" },
+    { sku: "W0004" }
+  ];
+  const runtime = stubBatchRuntime(
+    products,
+    {},
+    {},
+    () => ({ found: true, files: [] })
+  );
+  const executingTrigger = {
+    getHandlerFunction: () => "continueMediaSync"
+  };
+  runtime.triggers.push(executingTrigger);
+
+  sandbox.syncMedia();
+
+  assert.equal(runtime.triggers.length, 1);
+  assert.notEqual(runtime.triggers[0], executingTrigger);
+  assert.equal(runtime.triggers[0].getHandlerFunction(), "continueMediaSync");
+  assert.equal(
+    JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).lastSku,
+    "W0003"
+  );
+});
+
+test("clears state and triggers on the last non-empty batch", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }, { sku: "W0002" }, { sku: "W0003" }],
+    {},
+    {},
+    () => ({ found: true, files: [] })
+  );
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "W0002",
+    startedAt: "2026-10-25T00:00:00.000Z"
+  });
+  runtime.triggers.push({
+    getHandlerFunction: () => "continueMediaSync"
+  });
+
+  sandbox.continueMediaSync();
+
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  assert.equal(runtime.triggers.length, 0);
+  assert.deepEqual(sandbox.__calls, ["manifest"]);
+});
+
+test("simulates a 70-SKU catalog with 280 images across bounded media-sync batches", () => {
+  const products = Array.from({ length: 70 }, (_, index) => ({
+    sku: "W" + String(index + 1).padStart(4, "0")
+  }));
+  const imageCountBySku = new Map();
+  products.forEach(product => imageCountBySku.set(product.sku, 4));
+
+  const runtime = stubBatchRuntime(
+    products,
+    {},
+    {},
+    sku => ({
+      found: true,
+      files: Array.from({ length: imageCountBySku.get(sku) }, (_, imageIndex) =>
+        driveFile((imageIndex + 1) + ".webp", sku + "-image-" + (imageIndex + 1))
+      )
+    })
+  );
+
+  let uploaded = 0;
+  sandbox.getDriveFileBytes = fileId => ({
+    name: fileId.split("-image-")[1] + ".webp",
+    bytes: [1, 2, 3]
+  });
+  sandbox.publishFile = file => {
+    if (file.fileName.startsWith("images/")) uploaded += 1;
+  };
+
+  let executions = 0;
+  sandbox.syncMedia();
+  executions += 1;
+  while (runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1) {
+    sandbox.continueMediaSync();
+    executions += 1;
+    assert.ok(executions <= 24, "batch loop should terminate after at most 24 executions");
+  }
+
+  assert.equal(uploaded, 280);
+  assert.equal(executions, 24);
+  assert.equal(runtime.triggers.length, 0);
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+});
