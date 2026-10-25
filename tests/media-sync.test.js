@@ -68,8 +68,8 @@ function stubBatchRuntime(products, previousManifest, githubManifest, driveResul
   sandbox.ScriptApp = {
     getProjectTriggers: () => triggers.slice(),
     deleteTrigger: trigger => { const i = triggers.indexOf(trigger); if (i >= 0) triggers.splice(i, 1); },
-    newTrigger: handler => ({ timeBased() { return this; }, after() { return this; },
-      create() { triggers.push({ getHandlerFunction: () => handler }); } })
+    newTrigger: handler => ({ timeBased() { return this; }, after(delayMs) { this.delayMs = delayMs; return this; },
+      create() { triggers.push({ getHandlerFunction: () => handler, delayMs: this.delayMs }); } })
   };
   sandbox.getProducts = () => products;
   sandbox.getPublishedMediaManifest = () => previousManifest;
@@ -655,4 +655,67 @@ test("simulates a 70-SKU catalog with 280 images across bounded media-sync batch
   assert.equal(executions, 24);
   assert.equal(runtime.triggers.length, 0);
   assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+});
+
+
+test("a later-batch failure preserves the successful cursor and schedules a delayed retry", () => {
+  const products = [
+    { sku: "W0001" }, { sku: "W0002" }, { sku: "W0003" }, { sku: "W0004" }
+  ];
+  const runtime = stubBatchRuntime(products, {}, {}, () => ({ found: true, files: [] }));
+
+  sandbox.syncMedia();
+  assert.equal(
+    JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).lastSku,
+    "W0003"
+  );
+
+  sandbox.getProductFilesResult = () => { throw new Error("temporary Drive outage"); };
+  assert.throws(() => sandbox.continueMediaSync(), /temporary Drive outage/);
+
+  const state = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+  assert.equal(state.lastSku, "W0003", "failed batch must not advance the cursor");
+  assert.equal(state.retryCount, 1);
+  assert.match(state.lastError, /temporary Drive outage/);
+  assert.equal(runtime.triggers.length, 1);
+  assert.equal(runtime.triggers[0].getHandlerFunction(), "continueMediaSync");
+  assert.equal(runtime.triggers[0].delayMs, sandbox.MEDIA_SYNC_RETRY_DELAY_MS);
+});
+
+test("a transient failure can recover and finish without restarting completed batches", () => {
+  const products = [
+    { sku: "W0001" }, { sku: "W0002" }, { sku: "W0003" }, { sku: "W0004" }
+  ];
+  const healthyDriveResult = () => ({ found: true, files: [] });
+  const runtime = stubBatchRuntime(products, {}, {}, healthyDriveResult);
+
+  sandbox.syncMedia();
+  sandbox.getProductFilesResult = () => { throw new Error("temporary GitHub/Drive failure"); };
+  assert.throws(() => sandbox.continueMediaSync(), /temporary GitHub\/Drive failure/);
+  assert.equal(JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).lastSku, "W0003");
+  assert.equal(JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).retryCount, 1);
+
+  sandbox.getProductFilesResult = healthyDriveResult;
+  sandbox.continueMediaSync();
+
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  assert.equal(runtime.triggers.length, 0);
+});
+
+test("persistent failures stop after the configured retry limit and remove pending triggers", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }], {}, {},
+    () => { throw new Error("permanent permission denied"); }
+  );
+
+  for (let attempt = 1; attempt <= sandbox.MEDIA_SYNC_MAX_RETRIES; attempt += 1) {
+    assert.throws(() => sandbox.syncMedia(), /permanent permission denied/);
+    const state = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+    assert.equal(state.retryCount, attempt);
+    assert.equal(runtime.triggers.length, 1);
+  }
+
+  assert.throws(() => sandbox.syncMedia(), /permanent permission denied/);
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  assert.equal(runtime.triggers.length, 0);
 });
