@@ -241,6 +241,8 @@ const MEDIA_SYNC_BATCH_SIZE = 3;
 const MEDIA_SYNC_CONTINUATION_HANDLER = "continueMediaSync";
 const MEDIA_SYNC_AUDIT_HANDLER = "startMediaSyncAudit";
 const MEDIA_SYNC_AUDIT_INTERVAL_DAYS = 30;
+const MEDIA_SYNC_MAX_RETRIES = 3;
+const MEDIA_SYNC_RETRY_DELAY_MS = 5 * 60 * 1000;
 
 function getMediaSyncState() {
   const raw = PropertiesService.getScriptProperties().getProperty(MEDIA_SYNC_STATE_PROPERTY);
@@ -320,14 +322,18 @@ function startMediaSyncAudit() {
   return syncMedia();
 }
 
-function ensureMediaSyncContinuation() {
+function ensureMediaSyncContinuation(delayMs) {
   // A one-shot trigger may still be listed while its handler is running.
   // Replace all existing continuation triggers to guarantee a future run.
   removeMediaSyncContinuationTriggers();
 
+  const delay = typeof delayMs === "number"
+    ? delayMs
+    : 60 * 1000;
+
   ScriptApp.newTrigger(MEDIA_SYNC_CONTINUATION_HANDLER)
     .timeBased()
-    .after(60 * 1000)
+    .after(delay)
     .create();
 }
 
@@ -354,9 +360,11 @@ function syncMedia() {
     return "Media synchronization is already running. Try again shortly.";
   }
 
+  let state = null;
+
   try {
+    state = getMediaSyncState();
     const products = getProducts();
-    const state = getMediaSyncState();
     const batch = selectMediaSyncBatch(products, state.lastSku, MEDIA_SYNC_BATCH_SIZE);
 
     if (batch.products.length === 0) {
@@ -453,7 +461,8 @@ function syncMedia() {
       saveMediaSyncState({
         lastSku: lastSku,
         startedAt: state.startedAt || new Date().toISOString(),
-        mode: state.mode || "normal"
+        mode: state.mode || "normal",
+        retryCount: 0
       });
       ensureMediaSyncContinuation();
     } else {
@@ -481,6 +490,52 @@ function syncMedia() {
       report += "\nSkipped SKUs (Drive folder missing): " + warnings.map(item => item.sku).join(", ");
     }
     return report;
+  } catch (error) {
+    // Keep the cursor at the last fully successful batch. Retry transient
+    // Drive/GitHub failures with a bounded number of delayed one-shot triggers.
+    // Read persisted state again because the cursor may already have advanced
+    // if the failure occurred while scheduling the next continuation.
+    try {
+      const failedState = getMediaSyncState();
+      const retryCount = Number(failedState.retryCount) || 0;
+
+      if (retryCount < MEDIA_SYNC_MAX_RETRIES) {
+        saveMediaSyncState({
+          lastSku: failedState.lastSku || "",
+          startedAt: failedState.startedAt || new Date().toISOString(),
+          mode: failedState.mode || "normal",
+          retryCount: retryCount + 1,
+          lastError: String(error && error.message ? error.message : error),
+          lastFailureAt: new Date().toISOString()
+        });
+        ensureMediaSyncContinuation(MEDIA_SYNC_RETRY_DELAY_MS);
+        Logger.log(
+          "Media synchronization failed; retry " + (retryCount + 1) +
+          " of " + MEDIA_SYNC_MAX_RETRIES + " scheduled in " +
+          Math.round(MEDIA_SYNC_RETRY_DELAY_MS / 60000) + " minutes. Error: " +
+          String(error && error.message ? error.message : error)
+        );
+      } else {
+        // Stop retrying after the configured limit. Clearing state allows a
+        // deliberate manual start to retry from the beginning without leaving
+        // the project permanently marked as busy.
+        clearMediaSyncState();
+        removeMediaSyncContinuationTriggers();
+        Logger.log(
+          "Media synchronization stopped after " + MEDIA_SYNC_MAX_RETRIES +
+          " retries. No further automatic retry will be scheduled. Error: " +
+          String(error && error.message ? error.message : error)
+        );
+      }
+    } catch (recoveryError) {
+      // Never mask the original Drive/GitHub error if recovery itself fails.
+      Logger.log(
+        "Media synchronization recovery failed: " +
+        String(recoveryError && recoveryError.message ? recoveryError.message : recoveryError)
+      );
+    }
+
+    throw error;
   } finally {
     lock.releaseLock();
   }
