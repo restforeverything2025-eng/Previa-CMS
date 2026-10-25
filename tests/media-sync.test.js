@@ -501,7 +501,8 @@ test("full audit hashes same-name files even when Drive metadata is unchanged", 
   sandbox.syncMedia();
   assert.equal(byteReads, 1);
   assert.deepEqual(sandbox.__calls, ["upload", "manifest"]);
-  assert.equal(JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).mode, "audit");
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  assert.equal(runtime.triggers.length, 0);
 });
 
 test("syncMedia does not advance the batch cursor when manifest publication fails", () => {
