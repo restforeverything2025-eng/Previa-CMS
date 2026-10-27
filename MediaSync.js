@@ -539,7 +539,10 @@ function continueMediaSync() {
 function syncMedia() {
   const claim = claimMediaSyncRun();
   if (!claim.claimed) {
-    if (claim.reason === "lock") {
+    if (claim.reason === "lock" || claim.reason === "active") {
+      // A continuation may be the only remaining recovery path after an
+      // in-flight run stalls. Replacing, rather than adding, the one-shot
+      // trigger keeps at most one future check scheduled.
       scheduleMediaSyncLockContentionRetry();
     }
     return "Media synchronization is already running. Try again shortly.";
@@ -550,9 +553,13 @@ function syncMedia() {
     const products = getProducts();
     const batch = selectMediaSyncBatch(products, state.lastSku, MEDIA_SYNC_BATCH_SIZE);
     if (batch.products.length === 0) {
-      finalizeMediaSyncRun(claim.runId, claim.generation, {
+      const finalized = finalizeMediaSyncRun(claim.runId, claim.generation, {
         complete: true, lastSku: state.lastSku
       });
+      if (!finalized.committed) {
+        scheduleMediaSyncLockContentionRetry();
+        return "Media synchronization completion is pending confirmation.";
+      }
       return "Media synchronization completed. No remaining batches.";
     }
 
