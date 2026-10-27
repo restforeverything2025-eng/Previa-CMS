@@ -231,7 +231,24 @@ google.script.run
     render(data);
     renderMediaSyncStatus(data.mediaSync);
   })
+  .withFailureHandler(function(error) {
+    showDashboardLoadError(error);
+  })
   .getDashboardData();
+
+function showDashboardLoadError(error) {
+  const message = error && error.message ? error.message : String(error || "Unknown error");
+  document.getElementById("dashboard").innerHTML =
+    "<div class=\"card full-width\"><div class=\"label\">Dashboard</div>" +
+    "<div>Dashboard data could not be loaded. Please reload the page or try again later.</div>" +
+    "<div class=\"publish-date\">" + escapeDashboardHtml(message) + "</div></div>" +
+    renderMediaSyncCard() +
+    renderActions();
+
+  // The status endpoint is independent of the dashboard statistics and can
+  // still provide useful sync information when the initial request fails.
+  pollMediaSyncStatus();
+}
 
 let mediaSyncPollInFlight = false;
 const MEDIA_SYNC_POLL_INTERVAL_MS = 10000;
@@ -325,7 +342,7 @@ function renderMediaSyncStatus(status) {
 
   const data = status || {};
   const details = [];
-  if (data.currentSku) details.push("Current SKU: " + data.currentSku);
+  if (data.batchStartSku) details.push("Batch start SKU: " + data.batchStartSku);
   if (data.batchStartSku || data.batchEndSku) {
     details.push("Batch: " + (data.batchStartSku || "—") + " → " + (data.batchEndSku || "—"));
   }
