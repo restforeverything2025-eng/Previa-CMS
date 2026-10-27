@@ -477,7 +477,7 @@ function finalizeMediaSyncRun(runId, generation, nextState) {
     });
     return { committed: true, complete: false };
   });
-  return result.acquired ? result.value : { committed: false };
+  return result.acquired ? result.value : { committed: false, reason: "lock" };
 }
 
 function recordMediaSyncFailure(runId, generation, error) {
@@ -651,6 +651,10 @@ function syncMedia() {
       complete: !batch.hasMoreAfterBatch, lastSku: lastSku
     });
     if (!finalized.committed) {
+      if (finalized.reason === "lock") {
+        scheduleMediaSyncLockContentionRetry();
+        return "Media synchronization could not confirm its cursor; a retry was scheduled.";
+      }
       return "Media synchronization result was superseded; no cursor was changed.";
     }
     if (!finalized.complete) {
@@ -697,6 +701,9 @@ function syncMedia() {
     return report;
   } catch (error) {
     const recovery = recordMediaSyncFailure(claim.runId, claim.generation, error);
+    if (!recovery.recorded) {
+      scheduleMediaSyncLockContentionRetry();
+    }
     if (recovery.retry) {
       try { ensureMediaSyncContinuation(MEDIA_SYNC_RETRY_DELAY_MS); }
       catch (scheduleError) { markMediaSyncSchedulingFailure(scheduleError); }
