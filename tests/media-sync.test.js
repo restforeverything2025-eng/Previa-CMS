@@ -1017,3 +1017,133 @@ test("an unconfirmed empty completion remains recoverable instead of reporting s
   assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
   assert.equal(runtime.triggers.length, 0);
 });
+
+
+test("a stale generation cannot replace the current generation's continuation", () => {
+  const runtime = stubBatchRuntime([], {}, {}, () => ({ found: true, files: [] }));
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "W0003", startedAt: "2026-10-27T00:00:00.000Z",
+    generation: 9, activeRunId: "", leaseExpiresAt: "", status: "pending"
+  });
+  const currentTrigger = {
+    getHandlerFunction: () => "continueMediaSync",
+    marker: "generation-9"
+  };
+  runtime.triggers.push(currentTrigger);
+
+  const result = sandbox.ensureMediaSyncContinuationForGeneration(8, 60 * 1000);
+
+  assert.equal(result.scheduled, false);
+  assert.equal(result.reason, "superseded");
+  assert.equal(runtime.triggers.length, 1);
+  assert.equal(runtime.triggers[0], currentTrigger);
+});
+
+test("repeated scheduling requests leave exactly one continuation trigger", () => {
+  const runtime = stubBatchRuntime([], {}, {}, () => ({ found: true, files: [] }));
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "W0003", startedAt: "2026-10-27T00:00:00.000Z",
+    generation: 4, activeRunId: "", leaseExpiresAt: "", status: "pending"
+  });
+
+  const first = sandbox.ensureMediaSyncContinuationForGeneration(4, 60 * 1000);
+  const firstTrigger = runtime.triggers[0];
+  const second = sandbox.ensureMediaSyncContinuationForGeneration(4, 60 * 1000);
+
+  assert.equal(first.scheduled, true);
+  assert.equal(second.scheduled, true);
+  assert.equal(runtime.triggers.length, 1);
+  assert.notEqual(runtime.triggers[0], firstTrigger);
+  assert.equal(runtime.triggers[0].getHandlerFunction(), "continueMediaSync");
+  assert.equal(runtime.triggers[0].delayMs, 60 * 1000);
+});
+
+test("generation-aware scheduling refuses to replace a trigger while a run owns the state", () => {
+  const runtime = stubBatchRuntime([], {}, {}, () => ({ found: true, files: [] }));
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "W0003", startedAt: "2026-10-27T00:00:00.000Z",
+    generation: 5, activeRunId: "active-run",
+    leaseExpiresAt: "2099-01-01T00:00:00.000Z", status: "running"
+  });
+  const existing = { getHandlerFunction: () => "continueMediaSync", marker: "watchdog" };
+  runtime.triggers.push(existing);
+
+  const result = sandbox.ensureMediaSyncContinuationForGeneration(5, 60 * 1000);
+
+  assert.equal(result.scheduled, false);
+  assert.equal(result.reason, "superseded");
+  assert.equal(runtime.triggers.length, 1);
+  assert.equal(runtime.triggers[0], existing);
+});
+
+test("an orphaned continuation removes only continuation triggers under the state lock", () => {
+  const runtime = stubBatchRuntime([], {}, {}, () => ({ found: true, files: [] }));
+  runtime.triggers.push(
+    { getHandlerFunction: () => "continueMediaSync" },
+    { getHandlerFunction: () => "startMediaSyncAudit" }
+  );
+
+  const report = sandbox.continueMediaSync();
+
+  assert.equal(report, "No pending media synchronization.");
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  assert.equal(runtime.triggers.length, 1);
+  assert.equal(runtime.triggers[0].getHandlerFunction(), "startMediaSyncAudit");
+});
+
+test("lock contention does not mutate triggers when the state lock remains unavailable", () => {
+  const runtime = stubBatchRuntime([], {}, {}, () => ({ found: true, files: [] }));
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "W0003", startedAt: "2026-10-27T00:00:00.000Z",
+    generation: 3, activeRunId: "", leaseExpiresAt: "", status: "pending"
+  });
+  const existing = { getHandlerFunction: () => "continueMediaSync", marker: "existing" };
+  runtime.triggers.push(existing);
+  sandbox.LockService = {
+    getScriptLock: () => ({ tryLock: () => false, releaseLock() {} })
+  };
+
+  sandbox.scheduleMediaSyncLockContentionRetry();
+
+  assert.equal(runtime.triggers.length, 1);
+  assert.equal(runtime.triggers[0], existing);
+  assert.equal(JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).lastSku, "W0003");
+});
+
+test("a continuation cannot create a fresh sync state after another run completed", () => {
+  const runtime = stubBatchRuntime([{ sku: "W0001" }], {}, {}, () => ({ found: true, files: [] }));
+  runtime.triggers.push({ getHandlerFunction: () => "continueMediaSync" });
+
+  const report = sandbox.continueMediaSync();
+
+  assert.equal(report, "No pending media synchronization.");
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  assert.deepEqual(sandbox.__calls, []);
+  assert.equal(runtime.triggers.length, 0);
+});
+
+test("a failed retry-trigger creation records an explicit scheduling failure", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }], {}, {},
+    () => { throw new Error("temporary Drive outage"); }
+  );
+  let triggerAttempts = 0;
+  sandbox.ScriptApp.newTrigger = handler => ({
+    timeBased() { return this; },
+    after(delayMs) { this.delayMs = delayMs; return this; },
+    create() {
+      triggerAttempts += 1;
+      throw new Error("trigger quota exceeded");
+    }
+  });
+
+  assert.throws(() => sandbox.syncMedia(), /temporary Drive outage/);
+  const state = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+  const status = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATUS_V1);
+  assert.equal(triggerAttempts, 1);
+  assert.equal(state.retryCount, 1);
+  assert.equal(state.status, "failed");
+  assert.match(state.lastError, /trigger quota exceeded/);
+  assert.equal(status.status, "failed");
+  assert.match(status.message, /manual recovery/);
+});
