@@ -343,9 +343,7 @@ function renderMediaSyncStatus(status) {
   const data = status || {};
   const details = [];
   if (data.batchStartSku) details.push("Batch start SKU: " + data.batchStartSku);
-  if (data.batchStartSku || data.batchEndSku) {
-    details.push("Batch: " + (data.batchStartSku || "—") + " → " + (data.batchEndSku || "—"));
-  }
+  if (data.batchEndSku) details.push("Batch end SKU: " + data.batchEndSku);
   if (data.lastSku) details.push("Last completed SKU: " + data.lastSku);
   if (data.processedSkus) details.push("Processed: " + data.processedSkus);
   if (Number(data.uploadedFiles) || Number(data.deletedFiles)) {
