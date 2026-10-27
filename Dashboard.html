@@ -227,8 +227,30 @@
   <script>
 
 google.script.run
-  .withSuccessHandler(render)
+  .withSuccessHandler(function(data) {
+    render(data);
+    renderMediaSyncStatus(data.mediaSync);
+  })
   .getDashboardData();
+
+let mediaSyncPollInFlight = false;
+const MEDIA_SYNC_POLL_INTERVAL_MS = 10000;
+
+function pollMediaSyncStatus() {
+  if (mediaSyncPollInFlight) return;
+  mediaSyncPollInFlight = true;
+  google.script.run
+    .withSuccessHandler(function(status) {
+      mediaSyncPollInFlight = false;
+      renderMediaSyncStatus(status);
+    })
+    .withFailureHandler(function() {
+      mediaSyncPollInFlight = false;
+    })
+    .getDashboardMediaSyncStatus();
+}
+
+setInterval(pollMediaSyncStatus, MEDIA_SYNC_POLL_INTERVAL_MS);
 
   let selectedProduct = null;
   let currentAction = null;
@@ -238,6 +260,7 @@ function render(data){
 
   document.getElementById("dashboard").innerHTML =
     renderStatistics(data) +
+    renderMediaSyncCard() +
     renderActions() +
     renderLastPublication(data);
 
@@ -277,6 +300,50 @@ ${createStatCard("Images", data.images)}
 
 `;
 
+}
+
+function renderMediaSyncCard(){
+  return `
+<div class="card full-width">
+  <div class="label">Media Sync</div>
+  <div id="media-sync-status">Loading status…</div>
+</div>`;
+}
+
+function escapeDashboardHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderMediaSyncStatus(status) {
+  const target = document.getElementById("media-sync-status");
+  if (!target) return;
+
+  const data = status || {};
+  const details = [];
+  if (data.currentSku) details.push("Current SKU: " + data.currentSku);
+  if (data.batchStartSku || data.batchEndSku) {
+    details.push("Batch: " + (data.batchStartSku || "—") + " → " + (data.batchEndSku || "—"));
+  }
+  if (data.lastSku) details.push("Last completed SKU: " + data.lastSku);
+  if (data.processedSkus) details.push("Processed: " + data.processedSkus);
+  if (Number(data.uploadedFiles) || Number(data.deletedFiles)) {
+    details.push("Uploaded: " + (Number(data.uploadedFiles) || 0) +
+      ", deleted: " + (Number(data.deletedFiles) || 0));
+  }
+  if (data.retryCount) details.push("Retry: " + data.retryCount);
+  if (data.updatedAt) details.push("Updated: " + data.updatedAt);
+  if (data.lastError) details.push("Error: " + data.lastError);
+
+  target.innerHTML =
+    "<div class=\"value\">" + escapeDashboardHtml(data.status || "idle") + "</div>" +
+    "<div class=\"publish-date\">" +
+    escapeDashboardHtml(details.join(" · ") || data.message || "No active media synchronization.") +
+    "</div>";
 }
 
 function renderActions(){
