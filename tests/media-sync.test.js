@@ -945,3 +945,75 @@ test("a brief state-lock collision schedules a continuation that can resume", ()
   const state = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
   assert.equal(state.lastSku, "W0003");
 });
+
+
+test("an active lease keeps one recovery trigger and resumes after expiry", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }, { sku: "W0002" }, { sku: "W0003" }, { sku: "W0004" }],
+    {},
+    {},
+    () => ({ found: true, files: [] })
+  );
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "",
+    startedAt: "2026-10-27T00:00:00.000Z",
+    generation: 7,
+    activeRunId: "stalled-run",
+    leaseExpiresAt: "2099-01-01T00:00:00.000Z",
+    status: "running"
+  });
+
+  const report = sandbox.syncMedia();
+
+  assert.match(report, /already running/);
+  assert.equal(runtime.triggers.length, 1);
+  assert.equal(runtime.triggers[0].getHandlerFunction(), "continueMediaSync");
+
+  const expired = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+  expired.leaseExpiresAt = "2000-01-01T00:00:00.000Z";
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify(expired);
+
+  const resumed = sandbox.continueMediaSync();
+
+  assert.match(resumed, /continuing automatically/);
+  const state = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+  assert.equal(state.lastSku, "W0003");
+  assert.equal(runtime.triggers.length, 1);
+});
+
+test("an unconfirmed empty completion remains recoverable instead of reporting success", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }],
+    {},
+    {},
+    () => ({ found: true, files: [] })
+  );
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "W0001",
+    startedAt: "2026-10-27T00:00:00.000Z",
+    generation: 0,
+    activeRunId: "",
+    leaseExpiresAt: "",
+    status: "pending"
+  });
+
+  const originalFinalize = sandbox.finalizeMediaSyncRun;
+  sandbox.finalizeMediaSyncRun = () => ({ committed: false, reason: "lock" });
+
+  const report = sandbox.syncMedia();
+
+  sandbox.finalizeMediaSyncRun = originalFinalize;
+  assert.match(report, /pending confirmation/);
+  assert.notEqual(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  assert.equal(runtime.triggers.length, 1);
+
+  const abandoned = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+  abandoned.leaseExpiresAt = "2000-01-01T00:00:00.000Z";
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify(abandoned);
+
+  const recovered = sandbox.continueMediaSync();
+
+  assert.match(recovered, /completed/);
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  assert.equal(runtime.triggers.length, 0);
+});
