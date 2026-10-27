@@ -579,6 +579,7 @@ function continueMediaSync() {
 function syncMedia(options) {
   const claim = claimMediaSyncRun(options);
   if (!claim.claimed) {
+    if (claim.reason === "none") return "No pending media synchronization.";
     if (claim.reason === "lock" || claim.reason === "active") {
       // A continuation may be the only remaining recovery path after an
       // in-flight run stalls. Replacing, rather than adding, the one-shot
