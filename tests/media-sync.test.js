@@ -735,7 +735,7 @@ test("persistent failures stop after the configured retry limit and remove pendi
 });
 
 
-test("lock contention reschedules a pending sync without advancing its cursor", () => {
+test("lock contention leaves triggers untouched when the state lock cannot be acquired", () => {
   const runtime = stubBatchRuntime(
     [{ sku: "W0001" }, { sku: "W0002" }, { sku: "W0003" }, { sku: "W0004" }],
     {}, {},
@@ -757,9 +757,8 @@ test("lock contention reschedules a pending sync without advancing its cursor", 
     JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).lastSku,
     "W0003"
   );
-  assert.equal(runtime.triggers.length, 1);
-  assert.equal(runtime.triggers[0].getHandlerFunction(), "continueMediaSync");
-  assert.equal(runtime.triggers[0].delayMs, 5 * 60 * 1000);
+  assert.equal(runtime.triggers.length, 0,
+    "trigger mutation must not happen outside the state lock");
 });
 
 test("an orphaned continuation trigger does not restart a completed full sync", () => {
