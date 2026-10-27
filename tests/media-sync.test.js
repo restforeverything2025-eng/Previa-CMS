@@ -855,3 +855,27 @@ test("normal completion clears active state and records a completed dashboard st
   const status = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATUS_V1);
   assert.equal(status.status, "completed");
 });
+
+
+test("a state-save error aborts before Drive or GitHub work begins", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }],
+    {},
+    {},
+    () => ({ found: true, files: [] })
+  );
+  sandbox.PropertiesService = {
+    getScriptProperties: () => ({
+      getProperty: key => runtime.properties[key] || null,
+      setProperty: key => {
+        if (key === "PREVIA_MEDIA_SYNC_STATE_V1") {
+          throw new Error("state write failed");
+        }
+      },
+      deleteProperty() {}
+    })
+  };
+
+  assert.throws(() => sandbox.syncMedia(), /state write failed/);
+  assert.deepEqual(sandbox.__calls, []);
+});
