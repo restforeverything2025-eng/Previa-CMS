@@ -457,6 +457,12 @@ function claimMediaSyncRun(options) {
       removeMediaSyncContinuationTriggersLocked();
       return { claimed: false, reason: "none" };
     }
+    // Automatic continuations must never revive a terminally failed sync.
+    // A direct/manual syncMedia() call may still explicitly start recovery.
+    if (state && requireExistingState && state.status === "failed") {
+      removeMediaSyncContinuationTriggersLocked();
+      return { claimed: false, reason: "failed" };
+    }
     if (!state) {
       state = {
         lastSku: "", startedAt: new Date().toISOString(), mode: "normal",
@@ -580,6 +586,7 @@ function syncMedia(options) {
   const claim = claimMediaSyncRun(options);
   if (!claim.claimed) {
     if (claim.reason === "none") return "No pending media synchronization.";
+    if (claim.reason === "failed") return "Media synchronization has failed and requires manual recovery.";
     if (claim.reason === "lock" || claim.reason === "active") {
       // A continuation may be the only remaining recovery path after an
       // in-flight run stalls. Replacing, rather than adding, the one-shot
