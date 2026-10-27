@@ -244,7 +244,10 @@ const MEDIA_SYNC_AUDIT_HANDLER = "startMediaSyncAudit";
 const MEDIA_SYNC_AUDIT_INTERVAL_DAYS = 30;
 const MEDIA_SYNC_MAX_RETRIES = 3;
 const MEDIA_SYNC_RETRY_DELAY_MS = 5 * 60 * 1000;
-const MEDIA_SYNC_LEASE_MS = 10 * 60 * 1000;
+// This is deliberately longer than one Apps Script execution. A running
+// invocation renews before each Drive/GitHub boundary; the extra margin avoids
+// automatic lease takeover while a slow external request is still in flight.
+const MEDIA_SYNC_LEASE_MS = 20 * 60 * 1000;
 
 function withMediaSyncStateLock(callback) {
   const lock = LockService.getScriptLock();
@@ -363,6 +366,54 @@ function removeMediaSyncContinuationTriggers() {
       ScriptApp.deleteTrigger(trigger);
     }
   });
+}
+
+function renewMediaSyncLease(runId, generation) {
+  const result = withMediaSyncStateLock(() => {
+    const state = getMediaSyncState();
+    if (!state || state.activeRunId !== runId || state.generation !== generation) {
+      return false;
+    }
+
+    const renewed = Object.assign({}, state, {
+      leaseExpiresAt: new Date(Date.now() + MEDIA_SYNC_LEASE_MS).toISOString()
+    });
+    saveMediaSyncState(renewed);
+    return true;
+  });
+
+  return Boolean(result.acquired && result.value);
+}
+
+function requireMediaSyncLease(runId, generation) {
+  if (!renewMediaSyncLease(runId, generation)) {
+    const error = new Error(
+      "Media synchronization lost ownership before an external operation."
+    );
+    error.code = "MEDIA_SYNC_LEASE_LOST";
+    throw error;
+  }
+}
+
+function scheduleMediaSyncLockContentionRetry() {
+  // We could not acquire the state lock, so do not alter the cursor. A
+  // best-effort one-shot trigger makes a brief lock collision observable and
+  // recoverable; an orphaned trigger is harmless because continueMediaSync
+  // removes it when no state remains.
+  try {
+    if (getMediaSyncState()) {
+      ensureMediaSyncContinuation(MEDIA_SYNC_RETRY_DELAY_MS);
+      saveMediaSyncStatus({
+        status: "waiting-for-lock",
+        message: "Media synchronization is waiting for the state lock."
+      });
+    }
+  } catch (error) {
+    Logger.log(
+      "Could not schedule media synchronization after lock contention: " +
+      String(error && error.message ? error.message : error)
+    );
+  }
 }
 
 function claimMediaSyncRun() {
@@ -488,10 +539,14 @@ function continueMediaSync() {
 function syncMedia() {
   const claim = claimMediaSyncRun();
   if (!claim.claimed) {
+    if (claim.reason === "lock") {
+      scheduleMediaSyncLockContentionRetry();
+    }
     return "Media synchronization is already running. Try again shortly.";
   }
   const state = claim.state;
   try {
+    requireMediaSyncLease(claim.runId, claim.generation);
     const products = getProducts();
     const batch = selectMediaSyncBatch(products, state.lastSku, MEDIA_SYNC_BATCH_SIZE);
     if (batch.products.length === 0) {
@@ -511,6 +566,7 @@ function syncMedia() {
 
     batch.products.forEach(product => {
       const sku = String(product.sku);
+      requireMediaSyncLease(claim.runId, claim.generation);
       const result = getProductFilesResult(sku);
       if (!result.found) {
         missingDriveSkus.push(sku);
@@ -524,6 +580,7 @@ function syncMedia() {
         if (!githubByName.has(file.name)) return;
         if (state.mode !== "audit" &&
             isMediaFileMetadataUnchanged(file, previousByName.get(file.name))) return;
+        requireMediaSyncLease(claim.runId, claim.generation);
         const driveFile = getDriveFileBytes(file.id);
         if (!driveBytesBySkuAndName[sku]) driveBytesBySkuAndName[sku] = {};
         driveBytesBySkuAndName[sku][file.name] = driveFile;
@@ -551,7 +608,11 @@ function syncMedia() {
     const deletedFiles = [];
 
     uploads.forEach(operation => {
+      requireMediaSyncLease(claim.runId, claim.generation);
       const cached = driveBytesBySkuAndName[String(operation.sku)] || {};
+      if (!cached[operation.file.name]) {
+        requireMediaSyncLease(claim.runId, claim.generation);
+      }
       const driveFile = cached[operation.file.name] || getDriveFileBytes(operation.file.id);
       const filePath = operation.sku + "/" + driveFile.name;
       publishFile({ fileName: "images/" + filePath, bytes: driveFile.bytes, binary: true },
@@ -559,15 +620,22 @@ function syncMedia() {
       uploadedFiles.push(filePath);
     });
     deletions.forEach(operation => {
+      requireMediaSyncLease(claim.runId, claim.generation);
       const filePath = operation.sku + "/" + operation.file.name;
       deleteFile(operation.file.path, "Delete image " + filePath);
       deletedFiles.push(filePath);
     });
 
     const manifestChanged = JSON.stringify(batchManifest) !== JSON.stringify(previousManifest);
-    if (manifestChanged || operations.length > 0) publishMediaManifest(batchManifest);
+    if (manifestChanged || operations.length > 0) {
+      // The lease check immediately before manifest publication is the last
+      // ownership fence before the externally visible batch commit.
+      requireMediaSyncLease(claim.runId, claim.generation);
+      publishMediaManifest(batchManifest);
+    }
 
     const lastSku = String(batch.products[batch.products.length - 1].sku);
+    requireMediaSyncLease(claim.runId, claim.generation);
     const finalized = finalizeMediaSyncRun(claim.runId, claim.generation, {
       complete: !batch.hasMoreAfterBatch, lastSku: lastSku
     });
