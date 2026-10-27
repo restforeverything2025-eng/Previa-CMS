@@ -1109,6 +1109,65 @@ test("lock contention does not mutate triggers when the state lock remains unava
   assert.equal(JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).lastSku, "W0003");
 });
 
+test("automatic continuation does not restart a terminally failed sync", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }], {}, {},
+    () => { throw new Error("should not run after terminal failure"); }
+  );
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "", startedAt: "2026-10-27T00:00:00.000Z",
+    retryCount: 4, generation: 8, activeRunId: "", leaseExpiresAt: "",
+    status: "failed", lastError: "permanent permission denied"
+  });
+  runtime.triggers.push({ getHandlerFunction: () => "continueMediaSync" });
+
+  const report = sandbox.continueMediaSync();
+
+  assert.match(report, /requires manual recovery/);
+  assert.equal(JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).status, "failed");
+  assert.deepEqual(sandbox.__calls, []);
+  assert.equal(runtime.triggers.length, 0);
+});
+
+test("a stale continuation does not revive a sync marked failed after scheduling error", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }], {}, {},
+    () => { throw new Error("should not run after scheduling failure"); }
+  );
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "W0001", startedAt: "2026-10-27T00:00:00.000Z",
+    retryCount: 1, generation: 9, activeRunId: "", leaseExpiresAt: "",
+    status: "failed", lastError: "trigger quota exceeded"
+  });
+  runtime.triggers.push({ getHandlerFunction: () => "continueMediaSync" });
+
+  const report = sandbox.continueMediaSync();
+
+  assert.match(report, /requires manual recovery/);
+  assert.equal(JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).generation, 9);
+  assert.equal(JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).status, "failed");
+  assert.deepEqual(sandbox.__calls, []);
+  assert.equal(runtime.triggers.length, 0);
+});
+
+test("manual syncMedia invocation can explicitly recover a failed sync", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }], {}, {},
+    () => ({ found: true, files: [] })
+  );
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "", startedAt: "2026-10-27T00:00:00.000Z",
+    retryCount: 4, generation: 8, activeRunId: "", leaseExpiresAt: "",
+    status: "failed", lastError: "previous failure"
+  });
+
+  const report = sandbox.syncMedia();
+
+  assert.match(report, /completed/i);
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  assert.equal(JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATUS_V1).status, "completed");
+});
+
 test("a continuation cannot create a fresh sync state after another run completed", () => {
   const runtime = stubBatchRuntime([{ sku: "W0001" }], {}, {}, () => ({ found: true, files: [] }));
   runtime.triggers.push({ getHandlerFunction: () => "continueMediaSync" });
