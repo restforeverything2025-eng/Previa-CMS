@@ -286,10 +286,19 @@ function clearMediaSyncState() {
 }
 
 function saveMediaSyncStatus(status) {
-  PropertiesService.getScriptProperties().setProperty(
-    MEDIA_SYNC_STATUS_PROPERTY,
-    JSON.stringify(Object.assign({ updatedAt: new Date().toISOString() }, status))
-  );
+  // Dashboard status is observability, not a reason to leave a claimed batch
+  // stuck. State writes remain strict and will abort the run if they fail.
+  try {
+    PropertiesService.getScriptProperties().setProperty(
+      MEDIA_SYNC_STATUS_PROPERTY,
+      JSON.stringify(Object.assign({ updatedAt: new Date().toISOString() }, status))
+    );
+  } catch (error) {
+    Logger.log(
+      "Could not save media synchronization status: " +
+      String(error && error.message ? error.message : error)
+    );
+  }
 }
 
 function getMediaSyncStatus() {
