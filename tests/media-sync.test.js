@@ -915,6 +915,14 @@ test("a brief state-lock collision schedules a continuation that can resume", ()
     {},
     () => ({ found: true, files: [] })
   );
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "",
+    startedAt: "2026-10-27T00:00:00.000Z",
+    generation: 0,
+    activeRunId: "",
+    leaseExpiresAt: "",
+    status: "pending"
+  });
   let attempts = 0;
   sandbox.LockService = {
     getScriptLock: () => ({
