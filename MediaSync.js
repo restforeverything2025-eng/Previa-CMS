@@ -552,10 +552,10 @@ function recordMediaSyncFailure(runId, generation, error) {
     : { recorded: false, retry: false, reason: "lock" };
 }
 
-function markMediaSyncSchedulingFailure(error) {
+function markMediaSyncSchedulingFailure(error, expectedGeneration) {
   const result = withMediaSyncStateLock(() => {
     const state = getMediaSyncState();
-    if (!state) return false;
+    if (!state || state.generation !== expectedGeneration || state.activeRunId) return false;
     const message = String(error && error.message ? error.message : error);
     const failed = Object.assign({}, state, {
       activeRunId: "", leaseExpiresAt: "", status: "failed",
@@ -715,7 +715,7 @@ function syncMedia(options) {
           return "Media synchronization result was superseded; no stale continuation was scheduled.";
         }
       } catch (scheduleError) {
-        markMediaSyncSchedulingFailure(scheduleError);
+        markMediaSyncSchedulingFailure(scheduleError, finalized.generation);
         throw new Error(
           "Media synchronization batch completed but continuation trigger could not be created: " +
           String(scheduleError && scheduleError.message ? scheduleError.message : scheduleError)
@@ -767,7 +767,7 @@ function syncMedia(options) {
           throw new Error("State lock was unavailable while scheduling retry.");
         }
       } catch (scheduleError) {
-        markMediaSyncSchedulingFailure(scheduleError);
+        markMediaSyncSchedulingFailure(scheduleError, recovery.generation);
       }
     }
     throw error;
