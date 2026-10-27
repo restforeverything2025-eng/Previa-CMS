@@ -556,6 +556,17 @@ function syncMedia() {
       return "Media synchronization completed. No remaining batches.";
     }
 
+    saveMediaSyncStatus({
+      status: "running",
+      mode: state.mode,
+      currentSku: String(batch.products[0].sku),
+      batchStartSku: String(batch.products[0].sku),
+      batchEndSku: String(batch.products[batch.products.length - 1].sku),
+      lastSku: state.lastSku,
+      retryCount: state.retryCount,
+      message: "Media synchronization batch is running."
+    });
+
     const previousManifest = getPublishedMediaManifest();
     const githubManifest = getRepositoryImages();
     const batchDriveManifest = {};
@@ -668,6 +679,21 @@ function syncMedia() {
     if (warnings.length) {
       report += "\nSkipped SKUs (Drive folder missing): " + warnings.map(item => item.sku).join(", ");
     }
+    saveMediaSyncStatus({
+      status: finalized.complete ? "completed" : "pending",
+      mode: state.mode,
+      currentSku: "",
+      lastSku: lastSku,
+      batchStartSku: String(batch.products[0].sku),
+      batchEndSku: lastSku,
+      processedSkus: batch.products.length,
+      uploadedFiles: uploadedFiles.length,
+      deletedFiles: deletedFiles.length,
+      retryCount: 0,
+      message: finalized.complete
+        ? "Media synchronization completed."
+        : "Media synchronization batch completed; continuation is pending."
+    });
     return report;
   } catch (error) {
     const recovery = recordMediaSyncFailure(claim.runId, claim.generation, error);
