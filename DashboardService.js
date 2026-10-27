@@ -23,7 +23,9 @@ return {
 
   ...mediaStats,
 
-  ...publicationStats
+  ...publicationStats,
+
+  mediaSync: getDashboardMediaSyncStatus()
 
 };
 
@@ -157,4 +159,45 @@ function getPublicationStats() {
 
   };
 
+}
+
+/**
+ * Lightweight polling endpoint for Dashboard. It reads only Script Properties;
+ * unlike getDashboardData it does not fetch media-manifest.json from GitHub.
+ */
+function getDashboardMediaSyncStatus() {
+  const status = typeof getMediaSyncStatus === "function"
+    ? getMediaSyncStatus()
+    : null;
+
+  if (!status) {
+    return {
+      status: "idle",
+      currentSku: "",
+      lastSku: "",
+      batchStartSku: "",
+      batchEndSku: "",
+      processedSkus: 0,
+      uploadedFiles: 0,
+      deletedFiles: 0,
+      retryCount: 0,
+      lastError: "",
+      updatedAt: ""
+    };
+  }
+
+  return {
+    status: status.status || "unknown",
+    currentSku: status.currentSku || "",
+    lastSku: status.lastSku || "",
+    batchStartSku: status.batchStartSku || "",
+    batchEndSku: status.batchEndSku || "",
+    processedSkus: Number(status.processedSkus) || 0,
+    uploadedFiles: Number(status.uploadedFiles) || 0,
+    deletedFiles: Number(status.deletedFiles) || 0,
+    retryCount: Number(status.retryCount) || 0,
+    lastError: status.lastError || "",
+    updatedAt: status.updatedAt || "",
+    message: status.message || ""
+  };
 }

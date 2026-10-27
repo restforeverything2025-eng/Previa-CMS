@@ -227,8 +227,47 @@
   <script>
 
 google.script.run
-  .withSuccessHandler(render)
+  .withSuccessHandler(function(data) {
+    render(data);
+    renderMediaSyncStatus(data.mediaSync);
+  })
+  .withFailureHandler(function(error) {
+    showDashboardLoadError(error);
+  })
   .getDashboardData();
+
+function showDashboardLoadError(error) {
+  const message = error && error.message ? error.message : String(error || "Unknown error");
+  document.getElementById("dashboard").innerHTML =
+    "<div class=\"card full-width\"><div class=\"label\">Dashboard</div>" +
+    "<div>Dashboard data could not be loaded. Please reload the page or try again later.</div>" +
+    "<div class=\"publish-date\">" + escapeDashboardHtml(message) + "</div></div>" +
+    renderMediaSyncCard() +
+    renderActions();
+
+  // The status endpoint is independent of the dashboard statistics and can
+  // still provide useful sync information when the initial request fails.
+  pollMediaSyncStatus();
+}
+
+let mediaSyncPollInFlight = false;
+const MEDIA_SYNC_POLL_INTERVAL_MS = 10000;
+
+function pollMediaSyncStatus() {
+  if (mediaSyncPollInFlight) return;
+  mediaSyncPollInFlight = true;
+  google.script.run
+    .withSuccessHandler(function(status) {
+      mediaSyncPollInFlight = false;
+      renderMediaSyncStatus(status);
+    })
+    .withFailureHandler(function() {
+      mediaSyncPollInFlight = false;
+    })
+    .getDashboardMediaSyncStatus();
+}
+
+setInterval(pollMediaSyncStatus, MEDIA_SYNC_POLL_INTERVAL_MS);
 
   let selectedProduct = null;
   let currentAction = null;
@@ -238,6 +277,7 @@ function render(data){
 
   document.getElementById("dashboard").innerHTML =
     renderStatistics(data) +
+    renderMediaSyncCard() +
     renderActions() +
     renderLastPublication(data);
 
@@ -277,6 +317,48 @@ ${createStatCard("Images", data.images)}
 
 `;
 
+}
+
+function renderMediaSyncCard(){
+  return `
+<div class="card full-width">
+  <div class="label">Media Sync</div>
+  <div id="media-sync-status">Loading status…</div>
+</div>`;
+}
+
+function escapeDashboardHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderMediaSyncStatus(status) {
+  const target = document.getElementById("media-sync-status");
+  if (!target) return;
+
+  const data = status || {};
+  const details = [];
+  if (data.batchStartSku) details.push("Batch start SKU: " + data.batchStartSku);
+  if (data.batchEndSku) details.push("Batch end SKU: " + data.batchEndSku);
+  if (data.lastSku) details.push("Last completed SKU: " + data.lastSku);
+  if (data.processedSkus) details.push("Processed: " + data.processedSkus);
+  if (Number(data.uploadedFiles) || Number(data.deletedFiles)) {
+    details.push("Uploaded: " + (Number(data.uploadedFiles) || 0) +
+      ", deleted: " + (Number(data.deletedFiles) || 0));
+  }
+  if (data.retryCount) details.push("Retry: " + data.retryCount);
+  if (data.updatedAt) details.push("Updated: " + data.updatedAt);
+  if (data.lastError) details.push("Error: " + data.lastError);
+
+  target.innerHTML =
+    "<div class=\"value\">" + escapeDashboardHtml(data.status || "idle") + "</div>" +
+    "<div class=\"publish-date\">" +
+    escapeDashboardHtml(details.join(" · ") || data.message || "No active media synchronization.") +
+    "</div>";
 }
 
 function renderActions(){

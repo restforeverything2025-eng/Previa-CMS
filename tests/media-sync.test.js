@@ -726,12 +726,16 @@ test("persistent failures stop after the configured retry limit and remove pendi
   }
 
   assert.throws(() => sandbox.syncMedia(), /permanent permission denied/);
-  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  const failedState = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+  assert.equal(failedState.status, "failed");
+  assert.equal(failedState.lastSku, "");
   assert.equal(runtime.triggers.length, 0);
+  const status = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATUS_V1);
+  assert.equal(status.status, "failed");
 });
 
 
-test("lock contention reschedules a pending sync without advancing its cursor", () => {
+test("lock contention leaves triggers untouched when the state lock cannot be acquired", () => {
   const runtime = stubBatchRuntime(
     [{ sku: "W0001" }, { sku: "W0002" }, { sku: "W0003" }, { sku: "W0004" }],
     {}, {},
@@ -753,9 +757,8 @@ test("lock contention reschedules a pending sync without advancing its cursor", 
     JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).lastSku,
     "W0003"
   );
-  assert.equal(runtime.triggers.length, 1);
-  assert.equal(runtime.triggers[0].getHandlerFunction(), "continueMediaSync");
-  assert.equal(runtime.triggers[0].delayMs, 5 * 60 * 1000);
+  assert.equal(runtime.triggers.length, 0,
+    "trigger mutation must not happen outside the state lock");
 });
 
 test("an orphaned continuation trigger does not restart a completed full sync", () => {
@@ -771,4 +774,434 @@ test("an orphaned continuation trigger does not restart a completed full sync", 
   assert.equal(report, "No pending media synchronization.");
   assert.equal(runtime.triggers.length, 0);
   assert.deepEqual(sandbox.__calls, []);
+});
+
+
+test("an active state lease prevents a competing run from touching the same batch", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }, { sku: "W0002" }],
+    {}, {},
+    () => ({ found: true, files: [] })
+  );
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "",
+    startedAt: "2026-10-27T00:00:00.000Z",
+    generation: 7,
+    activeRunId: "other-run",
+    leaseExpiresAt: "2099-01-01T00:00:00.000Z",
+    status: "running"
+  });
+
+  const report = sandbox.syncMedia();
+
+  assert.match(report, /already running/);
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 &&
+    JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).lastSku, "");
+  assert.deepEqual(sandbox.__calls, []);
+});
+
+test("a stale run cannot finalize over a newer generation", () => {
+  const runtime = stubBatchRuntime([], {}, {}, () => ({ found: true, files: [] }));
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "W0006",
+    startedAt: "2026-10-27T00:00:00.000Z",
+    generation: 12,
+    activeRunId: "new-run",
+    leaseExpiresAt: "2099-01-01T00:00:00.000Z",
+    status: "running"
+  });
+
+  const result = sandbox.finalizeMediaSyncRun("old-run", 11, {
+    complete: false,
+    lastSku: "W0003"
+  });
+
+  assert.equal(result.committed, false);
+  const state = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+  assert.equal(state.lastSku, "W0006");
+  assert.equal(state.activeRunId, "new-run");
+});
+
+test("a continuation scheduling error is recorded as failure, not success", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }, { sku: "W0002" }, { sku: "W0003" }, { sku: "W0004" }],
+    {}, {},
+    () => ({ found: true, files: [] })
+  );
+  sandbox.ScriptApp.newTrigger = () => ({
+    timeBased() { return this; },
+    after() { return this; },
+    create() { throw new Error("trigger quota exceeded"); }
+  });
+
+  assert.throws(() => sandbox.syncMedia(), /continuation trigger could not be created/);
+  const state = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+  assert.equal(state.lastSku, "W0003");
+  assert.equal(state.status, "failed");
+  const status = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATUS_V1);
+  assert.equal(status.status, "failed");
+});
+
+test("normal completion clears active state and records a completed dashboard status", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }],
+    {},
+    {},
+    () => ({ found: true, files: [] })
+  );
+
+  sandbox.syncMedia();
+
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  const status = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATUS_V1);
+  assert.equal(status.status, "completed");
+});
+
+
+test("a state-save error aborts before Drive or GitHub work begins", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }],
+    {},
+    {},
+    () => ({ found: true, files: [] })
+  );
+  sandbox.PropertiesService = {
+    getScriptProperties: () => ({
+      getProperty: key => runtime.properties[key] || null,
+      setProperty: key => {
+        if (key === "PREVIA_MEDIA_SYNC_STATE_V1") {
+          throw new Error("state write failed");
+        }
+      },
+      deleteProperty() {}
+    })
+  };
+
+  assert.throws(() => sandbox.syncMedia(), /state write failed/);
+  assert.deepEqual(sandbox.__calls, []);
+});
+
+
+test("lost ownership after manifest publication never advances the cursor", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }, { sku: "W0002" }, { sku: "W0003" }, { sku: "W0004" }],
+    {},
+    {},
+    () => ({ found: true, files: [driveFile("1.webp", "image-1")] })
+  );
+  sandbox.getDriveFileBytes = () => ({ name: "1.webp", bytes: [1, 2, 3] });
+  sandbox.publishFile = file => sandbox.__calls.push(file.fileName);
+  let manifestPublishes = 0;
+  sandbox.publishMediaManifest = () => { manifestPublishes += 1; };
+
+  const originalFinalize = sandbox.finalizeMediaSyncRun;
+  sandbox.finalizeMediaSyncRun = () => ({ committed: false });
+
+  const report = sandbox.syncMedia();
+
+  sandbox.finalizeMediaSyncRun = originalFinalize;
+  assert.match(report, /superseded/);
+  assert.equal(manifestPublishes, 1);
+  const state = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+  assert.equal(state.lastSku, "");
+  assert.equal(state.status, "running");
+});
+
+test("a brief state-lock collision schedules a continuation that can resume", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }, { sku: "W0002" }, { sku: "W0003" }, { sku: "W0004" }],
+    {},
+    {},
+    () => ({ found: true, files: [] })
+  );
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "",
+    startedAt: "2026-10-27T00:00:00.000Z",
+    generation: 0,
+    activeRunId: "",
+    leaseExpiresAt: "",
+    status: "pending"
+  });
+  let attempts = 0;
+  sandbox.LockService = {
+    getScriptLock: () => ({
+      tryLock: () => {
+        attempts += 1;
+        return attempts > 1;
+      },
+      releaseLock() {}
+    })
+  };
+
+  const firstReport = sandbox.syncMedia();
+
+  assert.match(firstReport, /already running/);
+  assert.equal(runtime.triggers.length, 1);
+  assert.equal(runtime.triggers[0].delayMs, 5 * 60 * 1000);
+
+  const resumedReport = sandbox.continueMediaSync();
+  assert.match(resumedReport, /continuing automatically/);
+  const state = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+  assert.equal(state.lastSku, "W0003");
+});
+
+
+test("an active lease keeps one recovery trigger and resumes after expiry", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }, { sku: "W0002" }, { sku: "W0003" }, { sku: "W0004" }],
+    {},
+    {},
+    () => ({ found: true, files: [] })
+  );
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "",
+    startedAt: "2026-10-27T00:00:00.000Z",
+    generation: 7,
+    activeRunId: "stalled-run",
+    leaseExpiresAt: "2099-01-01T00:00:00.000Z",
+    status: "running"
+  });
+
+  const report = sandbox.syncMedia();
+
+  assert.match(report, /already running/);
+  assert.equal(runtime.triggers.length, 1);
+  assert.equal(runtime.triggers[0].getHandlerFunction(), "continueMediaSync");
+
+  const expired = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+  expired.leaseExpiresAt = "2000-01-01T00:00:00.000Z";
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify(expired);
+
+  const resumed = sandbox.continueMediaSync();
+
+  assert.match(resumed, /continuing automatically/);
+  const state = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+  assert.equal(state.lastSku, "W0003");
+  assert.equal(runtime.triggers.length, 1);
+});
+
+test("an unconfirmed empty completion remains recoverable instead of reporting success", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }],
+    {},
+    {},
+    () => ({ found: true, files: [] })
+  );
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "W0001",
+    startedAt: "2026-10-27T00:00:00.000Z",
+    generation: 0,
+    activeRunId: "",
+    leaseExpiresAt: "",
+    status: "pending"
+  });
+
+  const originalFinalize = sandbox.finalizeMediaSyncRun;
+  sandbox.finalizeMediaSyncRun = () => ({ committed: false, reason: "lock" });
+
+  const report = sandbox.syncMedia();
+
+  sandbox.finalizeMediaSyncRun = originalFinalize;
+  assert.match(report, /pending confirmation/);
+  assert.notEqual(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  assert.equal(runtime.triggers.length, 1);
+
+  const abandoned = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+  abandoned.leaseExpiresAt = "2000-01-01T00:00:00.000Z";
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify(abandoned);
+
+  const recovered = sandbox.continueMediaSync();
+
+  assert.match(recovered, /completed/);
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  assert.equal(runtime.triggers.length, 0);
+});
+
+
+test("a stale generation cannot replace the current generation's continuation", () => {
+  const runtime = stubBatchRuntime([], {}, {}, () => ({ found: true, files: [] }));
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "W0003", startedAt: "2026-10-27T00:00:00.000Z",
+    generation: 9, activeRunId: "", leaseExpiresAt: "", status: "pending"
+  });
+  const currentTrigger = {
+    getHandlerFunction: () => "continueMediaSync",
+    marker: "generation-9"
+  };
+  runtime.triggers.push(currentTrigger);
+
+  const result = sandbox.ensureMediaSyncContinuationForGeneration(8, 60 * 1000);
+
+  assert.equal(result.scheduled, false);
+  assert.equal(result.reason, "superseded");
+  assert.equal(runtime.triggers.length, 1);
+  assert.equal(runtime.triggers[0], currentTrigger);
+});
+
+test("repeated scheduling requests leave exactly one continuation trigger", () => {
+  const runtime = stubBatchRuntime([], {}, {}, () => ({ found: true, files: [] }));
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "W0003", startedAt: "2026-10-27T00:00:00.000Z",
+    generation: 4, activeRunId: "", leaseExpiresAt: "", status: "pending"
+  });
+
+  const first = sandbox.ensureMediaSyncContinuationForGeneration(4, 60 * 1000);
+  const firstTrigger = runtime.triggers[0];
+  const second = sandbox.ensureMediaSyncContinuationForGeneration(4, 60 * 1000);
+
+  assert.equal(first.scheduled, true);
+  assert.equal(second.scheduled, true);
+  assert.equal(runtime.triggers.length, 1);
+  assert.notEqual(runtime.triggers[0], firstTrigger);
+  assert.equal(runtime.triggers[0].getHandlerFunction(), "continueMediaSync");
+  assert.equal(runtime.triggers[0].delayMs, 60 * 1000);
+});
+
+test("generation-aware scheduling refuses to replace a trigger while a run owns the state", () => {
+  const runtime = stubBatchRuntime([], {}, {}, () => ({ found: true, files: [] }));
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "W0003", startedAt: "2026-10-27T00:00:00.000Z",
+    generation: 5, activeRunId: "active-run",
+    leaseExpiresAt: "2099-01-01T00:00:00.000Z", status: "running"
+  });
+  const existing = { getHandlerFunction: () => "continueMediaSync", marker: "watchdog" };
+  runtime.triggers.push(existing);
+
+  const result = sandbox.ensureMediaSyncContinuationForGeneration(5, 60 * 1000);
+
+  assert.equal(result.scheduled, false);
+  assert.equal(result.reason, "superseded");
+  assert.equal(runtime.triggers.length, 1);
+  assert.equal(runtime.triggers[0], existing);
+});
+
+test("an orphaned continuation removes only continuation triggers under the state lock", () => {
+  const runtime = stubBatchRuntime([], {}, {}, () => ({ found: true, files: [] }));
+  runtime.triggers.push(
+    { getHandlerFunction: () => "continueMediaSync" },
+    { getHandlerFunction: () => "startMediaSyncAudit" }
+  );
+
+  const report = sandbox.continueMediaSync();
+
+  assert.equal(report, "No pending media synchronization.");
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  assert.equal(runtime.triggers.length, 1);
+  assert.equal(runtime.triggers[0].getHandlerFunction(), "startMediaSyncAudit");
+});
+
+test("lock contention does not mutate triggers when the state lock remains unavailable", () => {
+  const runtime = stubBatchRuntime([], {}, {}, () => ({ found: true, files: [] }));
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "W0003", startedAt: "2026-10-27T00:00:00.000Z",
+    generation: 3, activeRunId: "", leaseExpiresAt: "", status: "pending"
+  });
+  const existing = { getHandlerFunction: () => "continueMediaSync", marker: "existing" };
+  runtime.triggers.push(existing);
+  sandbox.LockService = {
+    getScriptLock: () => ({ tryLock: () => false, releaseLock() {} })
+  };
+
+  sandbox.scheduleMediaSyncLockContentionRetry();
+
+  assert.equal(runtime.triggers.length, 1);
+  assert.equal(runtime.triggers[0], existing);
+  assert.equal(JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).lastSku, "W0003");
+});
+
+test("automatic continuation does not restart a terminally failed sync", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }], {}, {},
+    () => { throw new Error("should not run after terminal failure"); }
+  );
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "", startedAt: "2026-10-27T00:00:00.000Z",
+    retryCount: 4, generation: 8, activeRunId: "", leaseExpiresAt: "",
+    status: "failed", lastError: "permanent permission denied"
+  });
+  runtime.triggers.push({ getHandlerFunction: () => "continueMediaSync" });
+
+  const report = sandbox.continueMediaSync();
+
+  assert.match(report, /requires manual recovery/);
+  assert.equal(JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).status, "failed");
+  assert.deepEqual(sandbox.__calls, []);
+  assert.equal(runtime.triggers.length, 0);
+});
+
+test("a stale continuation does not revive a sync marked failed after scheduling error", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }], {}, {},
+    () => { throw new Error("should not run after scheduling failure"); }
+  );
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "W0001", startedAt: "2026-10-27T00:00:00.000Z",
+    retryCount: 1, generation: 9, activeRunId: "", leaseExpiresAt: "",
+    status: "failed", lastError: "trigger quota exceeded"
+  });
+  runtime.triggers.push({ getHandlerFunction: () => "continueMediaSync" });
+
+  const report = sandbox.continueMediaSync();
+
+  assert.match(report, /requires manual recovery/);
+  assert.equal(JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).generation, 9);
+  assert.equal(JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).status, "failed");
+  assert.deepEqual(sandbox.__calls, []);
+  assert.equal(runtime.triggers.length, 0);
+});
+
+test("manual syncMedia invocation can explicitly recover a failed sync", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }], {}, {},
+    () => ({ found: true, files: [] })
+  );
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "", startedAt: "2026-10-27T00:00:00.000Z",
+    retryCount: 4, generation: 8, activeRunId: "", leaseExpiresAt: "",
+    status: "failed", lastError: "previous failure"
+  });
+
+  const report = sandbox.syncMedia();
+
+  assert.match(report, /completed/i);
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  assert.equal(JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATUS_V1).status, "completed");
+});
+
+test("a continuation cannot create a fresh sync state after another run completed", () => {
+  const runtime = stubBatchRuntime([{ sku: "W0001" }], {}, {}, () => ({ found: true, files: [] }));
+  runtime.triggers.push({ getHandlerFunction: () => "continueMediaSync" });
+
+  const report = sandbox.continueMediaSync();
+
+  assert.equal(report, "No pending media synchronization.");
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  assert.deepEqual(sandbox.__calls, []);
+  assert.equal(runtime.triggers.length, 0);
+});
+
+test("a failed retry-trigger creation records an explicit scheduling failure", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }], {}, {},
+    () => { throw new Error("temporary Drive outage"); }
+  );
+  let triggerAttempts = 0;
+  sandbox.ScriptApp.newTrigger = handler => ({
+    timeBased() { return this; },
+    after(delayMs) { this.delayMs = delayMs; return this; },
+    create() {
+      triggerAttempts += 1;
+      throw new Error("trigger quota exceeded");
+    }
+  });
+
+  assert.throws(() => sandbox.syncMedia(), /temporary Drive outage/);
+  const state = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+  const status = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATUS_V1);
+  assert.equal(triggerAttempts, 1);
+  assert.equal(state.retryCount, 1);
+  assert.equal(state.status, "failed");
+  assert.match(state.lastError, /trigger quota exceeded/);
+  assert.equal(status.status, "failed");
+  assert.match(status.message, /manual recovery/);
 });

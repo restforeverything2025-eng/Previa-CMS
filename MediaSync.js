@@ -237,43 +237,89 @@ function testPublishMediaManifest() {
  * operation succeeds, and retains entries for skipped/missing SKUs.
  */
 const MEDIA_SYNC_STATE_PROPERTY = "PREVIA_MEDIA_SYNC_STATE_V1";
+const MEDIA_SYNC_STATUS_PROPERTY = "PREVIA_MEDIA_SYNC_STATUS_V1";
 const MEDIA_SYNC_BATCH_SIZE = 3;
 const MEDIA_SYNC_CONTINUATION_HANDLER = "continueMediaSync";
 const MEDIA_SYNC_AUDIT_HANDLER = "startMediaSyncAudit";
 const MEDIA_SYNC_AUDIT_INTERVAL_DAYS = 30;
 const MEDIA_SYNC_MAX_RETRIES = 3;
 const MEDIA_SYNC_RETRY_DELAY_MS = 5 * 60 * 1000;
+// This is deliberately longer than one Apps Script execution. A running
+// invocation renews before each Drive/GitHub boundary; the extra margin avoids
+// automatic lease takeover while a slow external request is still in flight.
+const MEDIA_SYNC_LEASE_MS = 20 * 60 * 1000;
+
+function withMediaSyncStateLock(callback) {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) return { acquired: false };
+  try { return { acquired: true, value: callback() }; }
+  finally { lock.releaseLock(); }
+}
+
+function createMediaSyncRunId() {
+  return new Date().getTime().toString(36) + "-" +
+    Math.random().toString(36).slice(2);
+}
 
 function getMediaSyncState() {
-  const raw = PropertiesService.getScriptProperties().getProperty(MEDIA_SYNC_STATE_PROPERTY);
-  if (!raw) return { lastSku: "", startedAt: "" };
+  const raw = PropertiesService.getScriptProperties()
+    .getProperty(MEDIA_SYNC_STATE_PROPERTY);
+  if (!raw) return null;
   const state = JSON.parse(raw);
   if (!state || typeof state.lastSku !== "string") {
     throw new Error("Invalid persisted media-sync state. Refusing to reset progress automatically.");
   }
-  return state;
+  return {
+    lastSku: state.lastSku, startedAt: state.startedAt || "",
+    mode: state.mode || "normal", retryCount: Number(state.retryCount) || 0,
+    generation: Number(state.generation) || 0, activeRunId: state.activeRunId || "",
+    leaseExpiresAt: state.leaseExpiresAt || "", status: state.status || "pending",
+    lastError: state.lastError || "", lastFailureAt: state.lastFailureAt || ""
+  };
 }
 
 function saveMediaSyncState(state) {
-  PropertiesService.getScriptProperties().setProperty(MEDIA_SYNC_STATE_PROPERTY, JSON.stringify(state));
+  PropertiesService.getScriptProperties().setProperty(
+    MEDIA_SYNC_STATE_PROPERTY, JSON.stringify(state)
+  );
 }
 
 function clearMediaSyncState() {
   PropertiesService.getScriptProperties().deleteProperty(MEDIA_SYNC_STATE_PROPERTY);
 }
 
+function saveMediaSyncStatus(status) {
+  // Dashboard status is observability, not a reason to leave a claimed batch
+  // stuck. State writes remain strict and will abort the run if they fail.
+  try {
+    PropertiesService.getScriptProperties().setProperty(
+      MEDIA_SYNC_STATUS_PROPERTY,
+      JSON.stringify(Object.assign({ updatedAt: new Date().toISOString() }, status))
+    );
+  } catch (error) {
+    Logger.log(
+      "Could not save media synchronization status: " +
+      String(error && error.message ? error.message : error)
+    );
+  }
+}
+
+function getMediaSyncStatus() {
+  const raw = PropertiesService.getScriptProperties()
+    .getProperty(MEDIA_SYNC_STATUS_PROPERTY);
+  return raw ? JSON.parse(raw) : null;
+}
+
 function selectMediaSyncBatch(products, lastSku, batchSize) {
   const size = batchSize || MEDIA_SYNC_BATCH_SIZE;
   const sorted = (products || []).slice().sort((a, b) =>
     String(a.sku || "").localeCompare(String(b.sku || ""), undefined, {
-      numeric: true,
-      sensitivity: "base"
+      numeric: true, sensitivity: "base"
     })
   );
   const remaining = sorted.filter(product =>
     String(product.sku || "").localeCompare(String(lastSku || ""), undefined, {
-      numeric: true,
-      sensitivity: "base"
+      numeric: true, sensitivity: "base"
     }) > 0
   );
   return { products: remaining.slice(0, size), hasMoreAfterBatch: remaining.length > size };
@@ -285,59 +331,35 @@ function setupMediaSyncAuditWorker() {
       ScriptApp.deleteTrigger(trigger);
     }
   });
-  ScriptApp.newTrigger(MEDIA_SYNC_AUDIT_HANDLER)
-    .timeBased()
-    .everyDays(MEDIA_SYNC_AUDIT_INTERVAL_DAYS)
-    .create();
+  ScriptApp.newTrigger(MEDIA_SYNC_AUDIT_HANDLER).timeBased()
+    .everyDays(MEDIA_SYNC_AUDIT_INTERVAL_DAYS).create();
   return "Full media audit scheduled every " + MEDIA_SYNC_AUDIT_INTERVAL_DAYS + " days.";
 }
 
-/**
- * Start a full content audit. Unlike ordinary sync, this mode hashes every
- * Drive image that has a same-name GitHub counterpart, in resumable batches.
- * If another sync is already pending, leave its progress intact.
- */
 function startMediaSyncAudit() {
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(1000)) {
-    Logger.log("Full media audit skipped: media synchronization is already running.");
-    return "Media synchronization is already running; full audit was not started.";
-  }
-
-  try {
-    const properties = PropertiesService.getScriptProperties();
-    if (properties.getProperty(MEDIA_SYNC_STATE_PROPERTY)) {
-      Logger.log("Full media audit skipped: a media sync is already pending.");
-      return "A media sync is already pending; full audit was not started.";
+  const result = withMediaSyncStateLock(() => {
+    if (getMediaSyncState()) {
+      return { started: false, message: "A media sync is already pending; full audit was not started." };
     }
-    properties.setProperty(MEDIA_SYNC_STATE_PROPERTY, JSON.stringify({
-      lastSku: "",
-      startedAt: new Date().toISOString(),
-      mode: "audit"
-    }));
-  } finally {
-    lock.releaseLock();
-  }
-
-  return syncMedia();
+    saveMediaSyncState({
+      lastSku: "", startedAt: new Date().toISOString(), mode: "audit",
+      retryCount: 0, generation: 0, activeRunId: "", leaseExpiresAt: "",
+      status: "pending", lastError: "", lastFailureAt: ""
+    });
+    saveMediaSyncStatus({ status: "pending", mode: "audit", message: "Full media audit started." });
+    return { started: true };
+  });
+  if (!result.acquired) return "Media synchronization is already running; full audit was not started.";
+  if (!result.value.started) return result.value.message;
+  return syncMedia({ requireExistingState: true });
 }
 
-function ensureMediaSyncContinuation(delayMs) {
-  // A one-shot trigger may still be listed while its handler is running.
-  // Replace all existing continuation triggers to guarantee a future run.
-  removeMediaSyncContinuationTriggers();
-
-  const delay = typeof delayMs === "number"
-    ? delayMs
-    : 60 * 1000;
-
-  ScriptApp.newTrigger(MEDIA_SYNC_CONTINUATION_HANDLER)
-    .timeBased()
-    .after(delay)
-    .create();
-}
-
-function removeMediaSyncContinuationTriggers() {
+/**
+ * The following helpers must be called only while the script state lock is
+ * held. Serializing state checks and trigger changes prevents a stale run from
+ * deleting or replacing a newer run's continuation trigger.
+ */
+function removeMediaSyncContinuationTriggersLocked() {
   ScriptApp.getProjectTriggers().forEach(trigger => {
     if (trigger.getHandlerFunction() === MEDIA_SYNC_CONTINUATION_HANDLER) {
       ScriptApp.deleteTrigger(trigger);
@@ -345,84 +367,286 @@ function removeMediaSyncContinuationTriggers() {
   });
 }
 
-function continueMediaSync() {
-  // A delayed trigger can outlive the sync state after a competing execution
-  // finishes. Do not let that orphaned trigger accidentally start a new full sync.
-  const properties = PropertiesService.getScriptProperties();
-  if (!properties.getProperty(MEDIA_SYNC_STATE_PROPERTY)) {
-    removeMediaSyncContinuationTriggers();
-    return "No pending media synchronization.";
-  }
-
-  return syncMedia();
+function replaceMediaSyncContinuationTriggerLocked(delayMs) {
+  removeMediaSyncContinuationTriggersLocked();
+  ScriptApp.newTrigger(MEDIA_SYNC_CONTINUATION_HANDLER).timeBased()
+    .after(typeof delayMs === "number" ? delayMs : 60 * 1000).create();
 }
 
-/**
- * Each execution reconciles a small SKU batch. The cursor advances only after
- * uploads, deletions and manifest publication all succeed. A one-shot trigger
- * resumes the next batch without changing Dashboard or menu entry points.
- */
-function syncMedia() {
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(1000)) {
-    // A continuation trigger may collide with another Apps Script execution
-    // that is not itself responsible for resuming this media sync. If there is
-    // persisted progress, arrange another attempt; the handler checks state
-    // before running so an orphaned trigger cannot restart a completed sync.
-    try {
-      const properties = PropertiesService.getScriptProperties();
-      if (properties.getProperty(MEDIA_SYNC_STATE_PROPERTY)) {
-        ensureMediaSyncContinuation(MEDIA_SYNC_RETRY_DELAY_MS);
+function ensureMediaSyncContinuationForGeneration(expectedGeneration, delayMs) {
+  const result = withMediaSyncStateLock(() => {
+    const state = getMediaSyncState();
+    if (!state || state.generation !== expectedGeneration || state.activeRunId) {
+      return { scheduled: false, reason: "superseded" };
+    }
+    replaceMediaSyncContinuationTriggerLocked(delayMs);
+    return { scheduled: true, generation: state.generation };
+  });
+  if (!result.acquired) return { scheduled: false, reason: "lock" };
+  return result.value;
+}
+
+function removeMediaSyncContinuationTriggers() {
+  const result = withMediaSyncStateLock(() => {
+    removeMediaSyncContinuationTriggersLocked();
+    return true;
+  });
+  return Boolean(result.acquired && result.value);
+}
+
+function renewMediaSyncLease(runId, generation) {
+  const result = withMediaSyncStateLock(() => {
+    const state = getMediaSyncState();
+    if (!state || state.activeRunId !== runId || state.generation !== generation) {
+      return false;
+    }
+
+    const renewed = Object.assign({}, state, {
+      leaseExpiresAt: new Date(Date.now() + MEDIA_SYNC_LEASE_MS).toISOString()
+    });
+    saveMediaSyncState(renewed);
+    return true;
+  });
+
+  return Boolean(result.acquired && result.value);
+}
+
+function requireMediaSyncLease(runId, generation) {
+  if (!renewMediaSyncLease(runId, generation)) {
+    const error = new Error(
+      "Media synchronization lost ownership before an external operation."
+    );
+    error.code = "MEDIA_SYNC_LEASE_LOST";
+    throw error;
+  }
+}
+
+function scheduleMediaSyncLockContentionRetry() {
+  // Trigger mutations are never performed without the state lock. If lock
+  // contention persists, leave state and triggers untouched for safe recovery.
+  try {
+    const result = withMediaSyncStateLock(() => {
+      const state = getMediaSyncState();
+      if (!state) {
+        removeMediaSyncContinuationTriggersLocked();
+        return { scheduled: false, reason: "none" };
       }
-    } catch (recoveryError) {
-      Logger.log(
-        "Could not reschedule media sync after lock contention: " +
-        String(recoveryError && recoveryError.message ? recoveryError.message : recoveryError)
-      );
+      replaceMediaSyncContinuationTriggerLocked(MEDIA_SYNC_RETRY_DELAY_MS);
+      saveMediaSyncStatus({
+        status: "waiting-for-lock",
+        message: "Media synchronization is waiting for the state lock."
+      });
+      return { scheduled: true, generation: state.generation };
+    });
+    if (!result.acquired) {
+      Logger.log("Could not schedule media synchronization after lock contention: state lock remains busy.");
+    }
+  } catch (error) {
+    Logger.log(
+      "Could not schedule media synchronization after lock contention: " +
+      String(error && error.message ? error.message : error)
+    );
+  }
+}
+
+function claimMediaSyncRun(options) {
+  const requireExistingState = Boolean(options && options.requireExistingState);
+  const result = withMediaSyncStateLock(() => {
+    let state = getMediaSyncState();
+    if (!state && requireExistingState) {
+      removeMediaSyncContinuationTriggersLocked();
+      return { claimed: false, reason: "none" };
+    }
+    // Automatic continuations must never revive a terminally failed sync.
+    // A direct/manual syncMedia() call may still explicitly start recovery.
+    if (state && requireExistingState && state.status === "failed") {
+      removeMediaSyncContinuationTriggersLocked();
+      return { claimed: false, reason: "failed" };
+    }
+    if (!state) {
+      state = {
+        lastSku: "", startedAt: new Date().toISOString(), mode: "normal",
+        retryCount: 0, generation: 0, activeRunId: "", leaseExpiresAt: "",
+        status: "pending", lastError: "", lastFailureAt: ""
+      };
+    }
+    const now = new Date();
+    const leaseExpires = state.leaseExpiresAt ? new Date(state.leaseExpiresAt).getTime() : 0;
+    if (state.activeRunId && leaseExpires > now.getTime()) {
+      return { claimed: false, reason: "active" };
+    }
+    const runId = createMediaSyncRunId();
+    const claimed = Object.assign({}, state, {
+      generation: state.generation + 1, activeRunId: runId,
+      leaseExpiresAt: new Date(now.getTime() + MEDIA_SYNC_LEASE_MS).toISOString(),
+      status: "running"
+    });
+    saveMediaSyncState(claimed);
+    saveMediaSyncStatus({
+      status: "running", mode: claimed.mode, lastSku: claimed.lastSku,
+      generation: claimed.generation, runId: runId,
+      message: "Media synchronization batch is running."
+    });
+    return { claimed: true, runId: runId, generation: claimed.generation, state: claimed };
+  });
+  return result.acquired ? result.value : { claimed: false, reason: "lock" };
+}
+
+function finalizeMediaSyncRun(runId, generation, nextState) {
+  const result = withMediaSyncStateLock(() => {
+    const state = getMediaSyncState();
+    if (!state || state.activeRunId !== runId || state.generation !== generation) {
+      return { committed: false };
+    }
+    if (nextState.complete) {
+      clearMediaSyncState();
+      removeMediaSyncContinuationTriggersLocked();
+      saveMediaSyncStatus({
+        status: "completed", mode: state.mode,
+        lastSku: nextState.lastSku || state.lastSku,
+        message: "Media synchronization completed."
+      });
+      return { committed: true, complete: true };
+    }
+    const pending = Object.assign({}, state, {
+      lastSku: nextState.lastSku, retryCount: 0,
+      generation: state.generation + 1, activeRunId: "", leaseExpiresAt: "",
+      status: "pending", lastError: "", lastFailureAt: ""
+    });
+    saveMediaSyncState(pending);
+    saveMediaSyncStatus({
+      status: "pending", mode: pending.mode, lastSku: pending.lastSku,
+      generation: pending.generation,
+      message: "Media synchronization batch completed; continuation is required."
+    });
+    return { committed: true, complete: false, generation: pending.generation };
+  });
+  return result.acquired ? result.value : { committed: false, reason: "lock" };
+}
+
+function recordMediaSyncFailure(runId, generation, error) {
+  const result = withMediaSyncStateLock(() => {
+    const state = getMediaSyncState();
+    if (!state || state.activeRunId !== runId || state.generation !== generation) {
+      return { recorded: false, retry: false, reason: "superseded" };
+    }
+    const retryCount = state.retryCount + 1;
+    const message = String(error && error.message ? error.message : error);
+    const failed = Object.assign({}, state, {
+      activeRunId: "", leaseExpiresAt: "", generation: state.generation + 1,
+      retryCount: retryCount,
+      status: retryCount <= MEDIA_SYNC_MAX_RETRIES ? "retry-pending" : "failed",
+      lastError: message, lastFailureAt: new Date().toISOString()
+    });
+    saveMediaSyncState(failed);
+    if (retryCount > MEDIA_SYNC_MAX_RETRIES) removeMediaSyncContinuationTriggersLocked();
+    saveMediaSyncStatus({
+      status: failed.status, mode: failed.mode, lastSku: failed.lastSku,
+      retryCount: retryCount, lastError: message,
+      message: retryCount <= MEDIA_SYNC_MAX_RETRIES
+        ? "Media synchronization failed; retry is pending."
+        : "Media synchronization failed permanently; automatic retries stopped."
+    });
+    return {
+      recorded: true,
+      retry: retryCount <= MEDIA_SYNC_MAX_RETRIES,
+      generation: failed.generation
+    };
+  });
+  return result.acquired
+    ? result.value
+    : { recorded: false, retry: false, reason: "lock" };
+}
+
+function markMediaSyncSchedulingFailure(error, expectedGeneration) {
+  const result = withMediaSyncStateLock(() => {
+    const state = getMediaSyncState();
+    if (!state || state.generation !== expectedGeneration || state.activeRunId) return false;
+    const message = String(error && error.message ? error.message : error);
+    const failed = Object.assign({}, state, {
+      activeRunId: "", leaseExpiresAt: "", status: "failed",
+      lastError: message, lastFailureAt: new Date().toISOString()
+    });
+    saveMediaSyncState(failed);
+    saveMediaSyncStatus({
+      status: "failed", mode: failed.mode, lastSku: failed.lastSku,
+      retryCount: failed.retryCount, lastError: message,
+      message: "Media synchronization needs manual recovery because its continuation could not be scheduled."
+    });
+    return true;
+  });
+  return result.acquired && result.value;
+}
+
+function continueMediaSync() {
+  return syncMedia({ requireExistingState: true });
+}
+
+function syncMedia(options) {
+  const claim = claimMediaSyncRun(options);
+  if (!claim.claimed) {
+    if (claim.reason === "none") return "No pending media synchronization.";
+    if (claim.reason === "failed") return "Media synchronization has failed and requires manual recovery.";
+    if (claim.reason === "lock" || claim.reason === "active") {
+      // A continuation may be the only remaining recovery path after an
+      // in-flight run stalls. Replacing, rather than adding, the one-shot
+      // trigger keeps at most one future check scheduled.
+      scheduleMediaSyncLockContentionRetry();
     }
     return "Media synchronization is already running. Try again shortly.";
   }
-
-  let state = null;
-
+  const state = claim.state;
   try {
-    state = getMediaSyncState();
+    requireMediaSyncLease(claim.runId, claim.generation);
     const products = getProducts();
     const batch = selectMediaSyncBatch(products, state.lastSku, MEDIA_SYNC_BATCH_SIZE);
-
     if (batch.products.length === 0) {
-      clearMediaSyncState();
-      removeMediaSyncContinuationTriggers();
-      Logger.log("Media synchronization completed.");
+      const finalized = finalizeMediaSyncRun(claim.runId, claim.generation, {
+        complete: true, lastSku: state.lastSku
+      });
+      if (!finalized.committed) {
+        scheduleMediaSyncLockContentionRetry();
+        return "Media synchronization completion is pending confirmation.";
+      }
       return "Media synchronization completed. No remaining batches.";
     }
+
+    saveMediaSyncStatus({
+      status: "running",
+      mode: state.mode,
+      currentSku: String(batch.products[0].sku),
+      batchStartSku: String(batch.products[0].sku),
+      batchEndSku: String(batch.products[batch.products.length - 1].sku),
+      lastSku: state.lastSku,
+      retryCount: state.retryCount,
+      message: "Media synchronization batch is running."
+    });
 
     const previousManifest = getPublishedMediaManifest();
     const githubManifest = getRepositoryImages();
     const batchDriveManifest = {};
     const missingDriveSkus = [];
     const driveBlobShas = {};
-    // Reuse bytes read for content hashing when the same file is uploaded.
     const driveBytesBySkuAndName = {};
     const batchSkus = new Set(batch.products.map(product => String(product.sku)));
 
     batch.products.forEach(product => {
       const sku = String(product.sku);
+      requireMediaSyncLease(claim.runId, claim.generation);
       const result = getProductFilesResult(sku);
       if (!result.found) {
         missingDriveSkus.push(sku);
         return;
       }
-
       batchDriveManifest[sku] = result.files;
       const previousByName = new Map((previousManifest[sku] || []).map(file => [file.name, file]));
       const githubByName = new Map((githubManifest[sku] || []).map(file => [file.name, file]));
       driveBlobShas[sku] = {};
-
       result.files.forEach(file => {
         if (!githubByName.has(file.name)) return;
         if (state.mode !== "audit" &&
             isMediaFileMetadataUnchanged(file, previousByName.get(file.name))) return;
+        requireMediaSyncLease(claim.runId, claim.generation);
         const driveFile = getDriveFileBytes(file.id);
         if (!driveBytesBySkuAndName[sku]) driveBytesBySkuAndName[sku] = {};
         driveBytesBySkuAndName[sku][file.name] = driveFile;
@@ -430,7 +654,6 @@ function syncMedia() {
       });
     });
 
-    // Preserve entries for all SKUs not visited in this batch.
     const batchManifest = {};
     Object.keys(previousManifest).forEach(sku => { batchManifest[sku] = previousManifest[sku]; });
     Object.keys(batchDriveManifest).forEach(sku => { batchManifest[sku] = batchDriveManifest[sku]; });
@@ -441,10 +664,8 @@ function syncMedia() {
     });
 
     const plan = buildMediaSyncPlan({
-      driveManifest: batchManifest,
-      githubManifest: githubManifest,
-      driveBlobShas: driveBlobShas,
-      missingDriveSkus: missingDriveSkus
+      driveManifest: batchManifest, githubManifest: githubManifest,
+      driveBlobShas: driveBlobShas, missingDriveSkus: missingDriveSkus
     });
     const operations = plan.operations.filter(operation => batchSkus.has(String(operation.sku)));
     const uploads = operations.filter(operation => operation.action === "upload");
@@ -452,47 +673,61 @@ function syncMedia() {
     const uploadedFiles = [];
     const deletedFiles = [];
 
-    // Upload every new/replaced image in this batch before deleting old files.
     uploads.forEach(operation => {
-      const cachedDriveFiles = driveBytesBySkuAndName[String(operation.sku)] || {};
-      const driveFile = cachedDriveFiles[operation.file.name] || getDriveFileBytes(operation.file.id);
+      requireMediaSyncLease(claim.runId, claim.generation);
+      const cached = driveBytesBySkuAndName[String(operation.sku)] || {};
+      if (!cached[operation.file.name]) {
+        requireMediaSyncLease(claim.runId, claim.generation);
+      }
+      const driveFile = cached[operation.file.name] || getDriveFileBytes(operation.file.id);
       const filePath = operation.sku + "/" + driveFile.name;
-      publishFile({
-        fileName: "images/" + filePath,
-        bytes: driveFile.bytes,
-        binary: true
-      }, "Upload image " + filePath);
+      publishFile({ fileName: "images/" + filePath, bytes: driveFile.bytes, binary: true },
+        "Upload image " + filePath);
       uploadedFiles.push(filePath);
     });
-
     deletions.forEach(operation => {
+      requireMediaSyncLease(claim.runId, claim.generation);
       const filePath = operation.sku + "/" + operation.file.name;
       deleteFile(operation.file.path, "Delete image " + filePath);
       deletedFiles.push(filePath);
     });
 
-    // Publish the manifest only after all image mutations succeed.
-    // Skip a no-op GitHub commit when neither files nor manifest changed.
-    const manifestChanged =
-      JSON.stringify(batchManifest) !== JSON.stringify(previousManifest);
+    const manifestChanged = JSON.stringify(batchManifest) !== JSON.stringify(previousManifest);
     if (manifestChanged || operations.length > 0) {
+      // The lease check immediately before manifest publication is the last
+      // ownership fence before the externally visible batch commit.
+      requireMediaSyncLease(claim.runId, claim.generation);
       publishMediaManifest(batchManifest);
     }
 
-    if (batch.hasMoreAfterBatch) {
-      const lastSku = String(batch.products[batch.products.length - 1].sku);
-      saveMediaSyncState({
-        lastSku: lastSku,
-        startedAt: state.startedAt || new Date().toISOString(),
-        mode: state.mode || "normal",
-        retryCount: 0
-      });
-      ensureMediaSyncContinuation();
-    } else {
-      // Complete on the last non-empty batch; do not schedule an unnecessary
-      // empty execution just to clear the cursor and continuation trigger.
-      clearMediaSyncState();
-      removeMediaSyncContinuationTriggers();
+    const lastSku = String(batch.products[batch.products.length - 1].sku);
+    requireMediaSyncLease(claim.runId, claim.generation);
+    const finalized = finalizeMediaSyncRun(claim.runId, claim.generation, {
+      complete: !batch.hasMoreAfterBatch, lastSku: lastSku
+    });
+    if (!finalized.committed) {
+      if (finalized.reason === "lock") {
+        scheduleMediaSyncLockContentionRetry();
+        return "Media synchronization could not confirm its cursor; a retry was scheduled.";
+      }
+      return "Media synchronization result was superseded; no cursor was changed.";
+    }
+    if (!finalized.complete) {
+      try {
+        const scheduled = ensureMediaSyncContinuationForGeneration(finalized.generation);
+        if (!scheduled.scheduled) {
+          if (scheduled.reason === "lock") {
+            throw new Error("State lock was unavailable while scheduling continuation.");
+          }
+          return "Media synchronization result was superseded; no stale continuation was scheduled.";
+        }
+      } catch (scheduleError) {
+        markMediaSyncSchedulingFailure(scheduleError, finalized.generation);
+        throw new Error(
+          "Media synchronization batch completed but continuation trigger could not be created: " +
+          String(scheduleError && scheduleError.message ? scheduleError.message : scheduleError)
+        );
+      }
     }
 
     const warnings = plan.warnings.filter(warning => batchSkus.has(String(warning.sku)));
@@ -500,67 +735,49 @@ function syncMedia() {
       "WARNING: Drive folder missing for SKU " + warning.sku +
       "; keeping previously published images and manifest entry."
     ));
-
-    let report = batch.hasMoreAfterBatch
-      ? "Media synchronization batch completed; continuing automatically."
-      : "Final media synchronization batch completed; verifying completion.";
+    let report = finalized.complete
+      ? "Final media synchronization batch completed."
+      : "Media synchronization batch completed; continuing automatically.";
     report += "\n\nProcessed SKUs: " + batch.products.length;
     report += "\nUploaded: " + uploadedFiles.length;
-    if (uploadedFiles.length) report += "\n  • " + uploadedFiles.join("\n  • ");
     report += "\nDeleted: " + deletedFiles.length;
-    if (deletedFiles.length) report += "\n  • " + deletedFiles.join("\n  • ");
     if (warnings.length) {
       report += "\nSkipped SKUs (Drive folder missing): " + warnings.map(item => item.sku).join(", ");
     }
+    saveMediaSyncStatus({
+      status: finalized.complete ? "completed" : "pending",
+      mode: state.mode,
+      currentSku: "",
+      lastSku: lastSku,
+      batchStartSku: String(batch.products[0].sku),
+      batchEndSku: lastSku,
+      processedSkus: batch.products.length,
+      uploadedFiles: uploadedFiles.length,
+      deletedFiles: deletedFiles.length,
+      retryCount: 0,
+      message: finalized.complete
+        ? "Media synchronization completed."
+        : "Media synchronization batch completed; continuation is pending."
+    });
     return report;
   } catch (error) {
-    // Keep the cursor at the last fully successful batch. Retry transient
-    // Drive/GitHub failures with a bounded number of delayed one-shot triggers.
-    // Read persisted state again because the cursor may already have advanced
-    // if the failure occurred while scheduling the next continuation.
-    try {
-      const failedState = getMediaSyncState();
-      const retryCount = Number(failedState.retryCount) || 0;
-
-      if (retryCount < MEDIA_SYNC_MAX_RETRIES) {
-        saveMediaSyncState({
-          lastSku: failedState.lastSku || "",
-          startedAt: failedState.startedAt || new Date().toISOString(),
-          mode: failedState.mode || "normal",
-          retryCount: retryCount + 1,
-          lastError: String(error && error.message ? error.message : error),
-          lastFailureAt: new Date().toISOString()
-        });
-        ensureMediaSyncContinuation(MEDIA_SYNC_RETRY_DELAY_MS);
-        Logger.log(
-          "Media synchronization failed; retry " + (retryCount + 1) +
-          " of " + MEDIA_SYNC_MAX_RETRIES + " scheduled in " +
-          Math.round(MEDIA_SYNC_RETRY_DELAY_MS / 60000) + " minutes. Error: " +
-          String(error && error.message ? error.message : error)
+    const recovery = recordMediaSyncFailure(claim.runId, claim.generation, error);
+    if (!recovery.recorded) {
+      if (recovery.reason === "lock") scheduleMediaSyncLockContentionRetry();
+    } else if (recovery.retry) {
+      try {
+        const scheduled = ensureMediaSyncContinuationForGeneration(
+          recovery.generation,
+          MEDIA_SYNC_RETRY_DELAY_MS
         );
-      } else {
-        // Stop retrying after the configured limit. Clearing state allows a
-        // deliberate manual start to retry from the beginning without leaving
-        // the project permanently marked as busy.
-        clearMediaSyncState();
-        removeMediaSyncContinuationTriggers();
-        Logger.log(
-          "Media synchronization stopped after " + MEDIA_SYNC_MAX_RETRIES +
-          " retries. No further automatic retry will be scheduled. Error: " +
-          String(error && error.message ? error.message : error)
-        );
+        if (!scheduled.scheduled && scheduled.reason === "lock") {
+          throw new Error("State lock was unavailable while scheduling retry.");
+        }
+      } catch (scheduleError) {
+        markMediaSyncSchedulingFailure(scheduleError, recovery.generation);
       }
-    } catch (recoveryError) {
-      // Never mask the original Drive/GitHub error if recovery itself fails.
-      Logger.log(
-        "Media synchronization recovery failed: " +
-        String(recoveryError && recoveryError.message ? recoveryError.message : recoveryError)
-      );
     }
-
     throw error;
-  } finally {
-    lock.releaseLock();
   }
 }
 
