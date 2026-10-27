@@ -351,21 +351,47 @@ function startMediaSyncAudit() {
   });
   if (!result.acquired) return "Media synchronization is already running; full audit was not started.";
   if (!result.value.started) return result.value.message;
-  return syncMedia();
+  return syncMedia({ requireExistingState: true });
 }
 
-function ensureMediaSyncContinuation(delayMs) {
-  removeMediaSyncContinuationTriggers();
-  ScriptApp.newTrigger(MEDIA_SYNC_CONTINUATION_HANDLER).timeBased()
-    .after(typeof delayMs === "number" ? delayMs : 60 * 1000).create();
-}
-
-function removeMediaSyncContinuationTriggers() {
+/**
+ * The following helpers must be called only while the script state lock is
+ * held. Serializing state checks and trigger changes prevents a stale run from
+ * deleting or replacing a newer run's continuation trigger.
+ */
+function removeMediaSyncContinuationTriggersLocked() {
   ScriptApp.getProjectTriggers().forEach(trigger => {
     if (trigger.getHandlerFunction() === MEDIA_SYNC_CONTINUATION_HANDLER) {
       ScriptApp.deleteTrigger(trigger);
     }
   });
+}
+
+function replaceMediaSyncContinuationTriggerLocked(delayMs) {
+  removeMediaSyncContinuationTriggersLocked();
+  ScriptApp.newTrigger(MEDIA_SYNC_CONTINUATION_HANDLER).timeBased()
+    .after(typeof delayMs === "number" ? delayMs : 60 * 1000).create();
+}
+
+function ensureMediaSyncContinuationForGeneration(expectedGeneration, delayMs) {
+  const result = withMediaSyncStateLock(() => {
+    const state = getMediaSyncState();
+    if (!state || state.generation !== expectedGeneration || state.activeRunId) {
+      return { scheduled: false, reason: "superseded" };
+    }
+    replaceMediaSyncContinuationTriggerLocked(delayMs);
+    return { scheduled: true, generation: state.generation };
+  });
+  if (!result.acquired) return { scheduled: false, reason: "lock" };
+  return result.value;
+}
+
+function removeMediaSyncContinuationTriggers() {
+  const result = withMediaSyncStateLock(() => {
+    removeMediaSyncContinuationTriggersLocked();
+    return true;
+  });
+  return Boolean(result.acquired && result.value);
 }
 
 function renewMediaSyncLease(runId, generation) {
@@ -396,17 +422,24 @@ function requireMediaSyncLease(runId, generation) {
 }
 
 function scheduleMediaSyncLockContentionRetry() {
-  // We could not acquire the state lock, so do not alter the cursor. A
-  // best-effort one-shot trigger makes a brief lock collision observable and
-  // recoverable; an orphaned trigger is harmless because continueMediaSync
-  // removes it when no state remains.
+  // Trigger mutations are never performed without the state lock. If lock
+  // contention persists, leave state and triggers untouched for safe recovery.
   try {
-    if (getMediaSyncState()) {
-      ensureMediaSyncContinuation(MEDIA_SYNC_RETRY_DELAY_MS);
+    const result = withMediaSyncStateLock(() => {
+      const state = getMediaSyncState();
+      if (!state) {
+        removeMediaSyncContinuationTriggersLocked();
+        return { scheduled: false, reason: "none" };
+      }
+      replaceMediaSyncContinuationTriggerLocked(MEDIA_SYNC_RETRY_DELAY_MS);
       saveMediaSyncStatus({
         status: "waiting-for-lock",
         message: "Media synchronization is waiting for the state lock."
       });
+      return { scheduled: true, generation: state.generation };
+    });
+    if (!result.acquired) {
+      Logger.log("Could not schedule media synchronization after lock contention: state lock remains busy.");
     }
   } catch (error) {
     Logger.log(
@@ -416,9 +449,14 @@ function scheduleMediaSyncLockContentionRetry() {
   }
 }
 
-function claimMediaSyncRun() {
+function claimMediaSyncRun(options) {
+  const requireExistingState = Boolean(options && options.requireExistingState);
   const result = withMediaSyncStateLock(() => {
     let state = getMediaSyncState();
+    if (!state && requireExistingState) {
+      removeMediaSyncContinuationTriggersLocked();
+      return { claimed: false, reason: "none" };
+    }
     if (!state) {
       state = {
         lastSku: "", startedAt: new Date().toISOString(), mode: "normal",
@@ -456,7 +494,7 @@ function finalizeMediaSyncRun(runId, generation, nextState) {
     }
     if (nextState.complete) {
       clearMediaSyncState();
-      removeMediaSyncContinuationTriggers();
+      removeMediaSyncContinuationTriggersLocked();
       saveMediaSyncStatus({
         status: "completed", mode: state.mode,
         lastSku: nextState.lastSku || state.lastSku,
@@ -475,7 +513,7 @@ function finalizeMediaSyncRun(runId, generation, nextState) {
       generation: pending.generation,
       message: "Media synchronization batch completed; continuation is required."
     });
-    return { committed: true, complete: false };
+    return { committed: true, complete: false, generation: pending.generation };
   });
   return result.acquired ? result.value : { committed: false, reason: "lock" };
 }
@@ -484,7 +522,7 @@ function recordMediaSyncFailure(runId, generation, error) {
   const result = withMediaSyncStateLock(() => {
     const state = getMediaSyncState();
     if (!state || state.activeRunId !== runId || state.generation !== generation) {
-      return { recorded: false, retry: false };
+      return { recorded: false, retry: false, reason: "superseded" };
     }
     const retryCount = state.retryCount + 1;
     const message = String(error && error.message ? error.message : error);
@@ -495,7 +533,7 @@ function recordMediaSyncFailure(runId, generation, error) {
       lastError: message, lastFailureAt: new Date().toISOString()
     });
     saveMediaSyncState(failed);
-    if (retryCount > MEDIA_SYNC_MAX_RETRIES) removeMediaSyncContinuationTriggers();
+    if (retryCount > MEDIA_SYNC_MAX_RETRIES) removeMediaSyncContinuationTriggersLocked();
     saveMediaSyncStatus({
       status: failed.status, mode: failed.mode, lastSku: failed.lastSku,
       retryCount: retryCount, lastError: message,
@@ -503,9 +541,15 @@ function recordMediaSyncFailure(runId, generation, error) {
         ? "Media synchronization failed; retry is pending."
         : "Media synchronization failed permanently; automatic retries stopped."
     });
-    return { recorded: true, retry: retryCount <= MEDIA_SYNC_MAX_RETRIES };
+    return {
+      recorded: true,
+      retry: retryCount <= MEDIA_SYNC_MAX_RETRIES,
+      generation: failed.generation
+    };
   });
-  return result.acquired ? result.value : { recorded: false, retry: false };
+  return result.acquired
+    ? result.value
+    : { recorded: false, retry: false, reason: "lock" };
 }
 
 function markMediaSyncSchedulingFailure(error) {
@@ -529,15 +573,11 @@ function markMediaSyncSchedulingFailure(error) {
 }
 
 function continueMediaSync() {
-  if (!getMediaSyncState()) {
-    removeMediaSyncContinuationTriggers();
-    return "No pending media synchronization.";
-  }
-  return syncMedia();
+  return syncMedia({ requireExistingState: true });
 }
 
-function syncMedia() {
-  const claim = claimMediaSyncRun();
+function syncMedia(options) {
+  const claim = claimMediaSyncRun(options);
   if (!claim.claimed) {
     if (claim.reason === "lock" || claim.reason === "active") {
       // A continuation may be the only remaining recovery path after an
@@ -666,7 +706,13 @@ function syncMedia() {
     }
     if (!finalized.complete) {
       try {
-        ensureMediaSyncContinuation();
+        const scheduled = ensureMediaSyncContinuationForGeneration(finalized.generation);
+        if (!scheduled.scheduled) {
+          if (scheduled.reason === "lock") {
+            throw new Error("State lock was unavailable while scheduling continuation.");
+          }
+          return "Media synchronization result was superseded; no stale continuation was scheduled.";
+        }
       } catch (scheduleError) {
         markMediaSyncSchedulingFailure(scheduleError);
         throw new Error(
@@ -709,11 +755,19 @@ function syncMedia() {
   } catch (error) {
     const recovery = recordMediaSyncFailure(claim.runId, claim.generation, error);
     if (!recovery.recorded) {
-      scheduleMediaSyncLockContentionRetry();
-    }
-    if (recovery.retry) {
-      try { ensureMediaSyncContinuation(MEDIA_SYNC_RETRY_DELAY_MS); }
-      catch (scheduleError) { markMediaSyncSchedulingFailure(scheduleError); }
+      if (recovery.reason === "lock") scheduleMediaSyncLockContentionRetry();
+    } else if (recovery.retry) {
+      try {
+        const scheduled = ensureMediaSyncContinuationForGeneration(
+          recovery.generation,
+          MEDIA_SYNC_RETRY_DELAY_MS
+        );
+        if (!scheduled.scheduled && scheduled.reason === "lock") {
+          throw new Error("State lock was unavailable while scheduling retry.");
+        }
+      } catch (scheduleError) {
+        markMediaSyncSchedulingFailure(scheduleError);
+      }
     }
     throw error;
   }
