@@ -726,8 +726,12 @@ test("persistent failures stop after the configured retry limit and remove pendi
   }
 
   assert.throws(() => sandbox.syncMedia(), /permanent permission denied/);
-  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  const failedState = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+  assert.equal(failedState.status, "failed");
+  assert.equal(failedState.lastSku, "");
   assert.equal(runtime.triggers.length, 0);
+  const status = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATUS_V1);
+  assert.equal(status.status, "failed");
 });
 
 
@@ -753,9 +757,7 @@ test("lock contention reschedules a pending sync without advancing its cursor", 
     JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).lastSku,
     "W0003"
   );
-  assert.equal(runtime.triggers.length, 1);
-  assert.equal(runtime.triggers[0].getHandlerFunction(), "continueMediaSync");
-  assert.equal(runtime.triggers[0].delayMs, 5 * 60 * 1000);
+  assert.equal(runtime.triggers.length, 0);
 });
 
 test("an orphaned continuation trigger does not restart a completed full sync", () => {
@@ -771,4 +773,85 @@ test("an orphaned continuation trigger does not restart a completed full sync", 
   assert.equal(report, "No pending media synchronization.");
   assert.equal(runtime.triggers.length, 0);
   assert.deepEqual(sandbox.__calls, []);
+});
+
+
+test("an active state lease prevents a competing run from touching the same batch", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }, { sku: "W0002" }],
+    {}, {},
+    () => ({ found: true, files: [] })
+  );
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "",
+    startedAt: "2026-10-27T00:00:00.000Z",
+    generation: 7,
+    activeRunId: "other-run",
+    leaseExpiresAt: "2099-01-01T00:00:00.000Z",
+    status: "running"
+  });
+
+  const report = sandbox.syncMedia();
+
+  assert.match(report, /already running/);
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 &&
+    JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).lastSku, "");
+  assert.deepEqual(sandbox.__calls, []);
+});
+
+test("a stale run cannot finalize over a newer generation", () => {
+  const runtime = stubBatchRuntime([], {}, {}, () => ({ found: true, files: [] }));
+  runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1 = JSON.stringify({
+    lastSku: "W0006",
+    startedAt: "2026-10-27T00:00:00.000Z",
+    generation: 12,
+    activeRunId: "new-run",
+    leaseExpiresAt: "2099-01-01T00:00:00.000Z",
+    status: "running"
+  });
+
+  const result = sandbox.finalizeMediaSyncRun("old-run", 11, {
+    complete: false,
+    lastSku: "W0003"
+  });
+
+  assert.equal(result.committed, false);
+  const state = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+  assert.equal(state.lastSku, "W0006");
+  assert.equal(state.activeRunId, "new-run");
+});
+
+test("a continuation scheduling error is recorded as failure, not success", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }, { sku: "W0002" }, { sku: "W0003" }, { sku: "W0004" }],
+    {}, {},
+    () => ({ found: true, files: [] })
+  );
+  sandbox.ScriptApp.newTrigger = () => ({
+    timeBased() { return this; },
+    after() { return this; },
+    create() { throw new Error("trigger quota exceeded"); }
+  });
+
+  assert.throws(() => sandbox.syncMedia(), /continuation trigger could not be created/);
+  const state = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+  assert.equal(state.lastSku, "W0003");
+  assert.equal(state.status, "failed");
+  const status = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATUS_V1);
+  assert.equal(status.status, "failed");
+});
+
+test("normal completion clears active state and records a completed dashboard status", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }],
+    {},
+    {},
+    () => ({ found: true, files: [] })
+  );
+
+  sandbox.syncMedia();
+
+  assert.equal(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1, undefined);
+  const status = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATUS_V1);
+  assert.equal(status.status, "completed");
 });
