@@ -757,7 +757,9 @@ test("lock contention reschedules a pending sync without advancing its cursor", 
     JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1).lastSku,
     "W0003"
   );
-  assert.equal(runtime.triggers.length, 0);
+  assert.equal(runtime.triggers.length, 1);
+  assert.equal(runtime.triggers[0].getHandlerFunction(), "continueMediaSync");
+  assert.equal(runtime.triggers[0].delayMs, 5 * 60 * 1000);
 });
 
 test("an orphaned continuation trigger does not restart a completed full sync", () => {
@@ -878,4 +880,60 @@ test("a state-save error aborts before Drive or GitHub work begins", () => {
 
   assert.throws(() => sandbox.syncMedia(), /state write failed/);
   assert.deepEqual(sandbox.__calls, []);
+});
+
+
+test("lost ownership after manifest publication never advances the cursor", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }, { sku: "W0002" }, { sku: "W0003" }, { sku: "W0004" }],
+    {},
+    {},
+    () => ({ found: true, files: [driveFile("1.webp", "image-1")] })
+  );
+  sandbox.getDriveFileBytes = () => ({ name: "1.webp", bytes: [1, 2, 3] });
+  sandbox.publishFile = file => sandbox.__calls.push(file.fileName);
+  let manifestPublishes = 0;
+  sandbox.publishMediaManifest = () => { manifestPublishes += 1; };
+
+  const originalFinalize = sandbox.finalizeMediaSyncRun;
+  sandbox.finalizeMediaSyncRun = () => ({ committed: false });
+
+  const report = sandbox.syncMedia();
+
+  sandbox.finalizeMediaSyncRun = originalFinalize;
+  assert.match(report, /superseded/);
+  assert.equal(manifestPublishes, 1);
+  const state = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+  assert.equal(state.lastSku, "");
+  assert.equal(state.status, "running");
+});
+
+test("a brief state-lock collision schedules a continuation that can resume", () => {
+  const runtime = stubBatchRuntime(
+    [{ sku: "W0001" }, { sku: "W0002" }, { sku: "W0003" }, { sku: "W0004" }],
+    {},
+    {},
+    () => ({ found: true, files: [] })
+  );
+  let attempts = 0;
+  sandbox.LockService = {
+    getScriptLock: () => ({
+      tryLock: () => {
+        attempts += 1;
+        return attempts > 1;
+      },
+      releaseLock() {}
+    })
+  };
+
+  const firstReport = sandbox.syncMedia();
+
+  assert.match(firstReport, /already running/);
+  assert.equal(runtime.triggers.length, 1);
+  assert.equal(runtime.triggers[0].delayMs, 5 * 60 * 1000);
+
+  const resumedReport = sandbox.continueMediaSync();
+  assert.match(resumedReport, /continuing automatically/);
+  const state = JSON.parse(runtime.properties.PREVIA_MEDIA_SYNC_STATE_V1);
+  assert.equal(state.lastSku, "W0003");
 });
