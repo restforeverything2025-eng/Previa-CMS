@@ -145,15 +145,7 @@ return {
 }
 
 function testGenerateDataJS() {
-
-  const products =
-    getProducts();
-
-  const data =
-    generateDataJS(products);
-
-  Logger.log(data.fileName);
-
-  Logger.log(data.content);
-
+  const products = getProducts();
+  const data = generateDataJS(products);
+  Logger.log("Generated " + data.fileName + "; characters=" + data.content.length + ".");
 }

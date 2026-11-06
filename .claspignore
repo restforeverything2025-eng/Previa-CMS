@@ -1,14 +1,18 @@
-# ============================================================
-# PREVIA CMS
-# Apps Script deployment exclusions
-# ============================================================
+﻿# PREVIA CMS - Apps Script exclusions
 
-# Node.js tests — never upload to Google Apps Script
+# Node.js tests
 **/tests/**
 
-# Local Git repository
+# Local Git
 .git/**
-
-# Local Git files
 .gitignore
 .claspignore
+
+# Local documentation and review files
+Docs/**
+**/*.txt
+LICENSE
+NOTICE.md
+
+# Local configuration
+.clasp.json

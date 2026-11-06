@@ -161,8 +161,7 @@ function validateImages(products) {
 
   products.forEach(product => {
 
-    const files =
-  getProductFiles(product.sku);
+    const files = getProductFiles(product.sku);
 
   const imageNumbers = new Set();
 
