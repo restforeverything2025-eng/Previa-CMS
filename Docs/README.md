@@ -2,202 +2,69 @@
 
 Google Apps Script based Content Management System for the PREVIA Vintage boutique.
 
-Documentation revision: 2026-10-06
-Status: Production
+Documentation revision: 2026-11-08  
+Repository checkpoint: `main` at `fa347b0ff3c3bf8a06d3cbb8a85ae27bbb9a0551` (2026-11-06)  
+Apps Script version: owner-reported deployment 71, `Previa CMS V3 - Hardened Media Sync` (deployment state is not verifiable through this GitHub repository)
 
 ## Overview
 
-PREVIA CMS is the infrastructure and persistence layer of the PREVIA ecosystem.
+PREVIA CMS is the infrastructure and persistence layer of the PREVIA ecosystem. It connects Google Sheets, Google Drive, PREVIA Core, GitHub and the public PREVIA website.
 
-It connects:
-- Google Sheets;
-- Google Drive;
-- PREVIA Core;
-- GitHub;
-- the public PREVIA website.
-
-Principles:
-- Simple;
-- Reliable;
-- One Module = One Responsibility;
-- clear Core ↔ CMS boundary;
-- Google Sheets as authoritative business-data storage;
-- secrets outside frontend code;
-- test before production.
+Core principles:
+- Google Sheets is authoritative for business data.
+- Google Drive is authoritative for product images.
+- GitHub contains published `data.js`, images and `media-manifest.json`; it is a publication target, not the business-data source of truth.
+- Secrets stay outside frontend code.
+- Catalog publication and media synchronization are independent operations.
 
 ## Main responsibilities
 
-### Catalog
-Product management, IDs, SKUs, normalization, validation and publication.
-
-### Media
-Google Drive image management, GitHub publication and media synchronization.
-
-### Customer
-Customer registry, provider identity lookup, atomic get-or-create and Customer ID generation.
-
-### Favorites
-Customer favorites persistence and duplicate prevention.
-
-### Orders
-Orders/OrderItems persistence, product reservation, public order numbers, document queue and catalog publication queue.
-
-### Administration
-Dashboard, Publish, Archive, Restore, Refresh Images and publication journal.
+- **Catalog:** product management, IDs, SKUs, normalization, validation and publication.
+- **Media:** Drive inventory, GitHub publication, MediaSync V3 recovery and periodic content audit.
+- **Customer and Favorites:** persistence and customer identity operations.
+- **Orders:** order persistence, product reservation, document queue and catalog publication queue.
+- **Administration:** Dashboard, Publish, Archive, Restore, Refresh Images and publication journal.
 
 ## Technology
 
-- Google Apps Script;
-- Google Sheets;
-- Google Drive;
-- GitHub;
-- Git;
-- clasp;
-- Node.js tests;
-- VS Code.
+Google Apps Script, Google Sheets, Google Drive, GitHub Git Data API, Git, clasp, Node.js tests and VS Code.
 
-## Architecture
+## Architecture and operations
 
-~~~text
-PREVIA Vintage App
-        ↓
-    PREVIA Core
-        ↓
- authenticated CMS API
-        ↓
-    PREVIA CMS
-     ↙       ↘
- Sheets       Drive
-     ↘       ↙
-       GitHub
-          ↓
-      Public site
-~~~
+```text
+Publish Boutique ──> validate and publish catalog ──> GitHub data.js
+Refresh Images ────> MediaSync V3 ──────────────────> GitHub images + media-manifest.json
+```
 
-## API
+Publish Boutique may read the Drive inventory and current published media manifest to keep image paths in `data.js` valid. It does not start MediaSync. See [Publish Pipeline](Publish%20Pipeline.md) and [Architecture](Architecture.md).
 
-WebApp.js is the single HTTP entry point.
+MediaSync V3 uses Git blobs, a Git tree, one Git commit and a non-force branch update. Checkpoint/recovery, ownership and continuation details are in [Backup & Recovery](Backup%20%26%20Recovery.md). The full media audit and its limits are described in [Architecture](Architecture.md#mediasync-v3-and-media-audit).
 
-Current API areas:
-- Customer;
-- Favorites;
-- Orders;
-- Product lookup.
+## API and services
 
-Customer/Favorites requests require authenticated Core envelopes.
+`WebApp.js` is the single HTTP entry point. API areas include Customer, Favorites, Orders and Product lookup. Customer and Favorites requests require authenticated Core envelopes; order requests use centralized Core HMAC authentication.
 
-Order requests use the centralized Core HMAC implementation.
+See [Services](Services.md) for module ownership and [Folder Structure](Folder%20Structure.md) for repository layout.
 
-## Customer
+## Tests
 
-Customers are stored in the Customers sheet.
+Node tests live in `tests/`. Relevant media suites are:
 
-Columns:
-customerId, provider, providerId, displayName, username, createdAt, updatedAt, status.
+- `tests/media-sync.test.js`
+- `tests/github-git-data.test.js`
+- `tests/catalog-media-independence.test.js`
 
-IDs use C000001, C000002 and so on.
-
-Creation is protected by Apps Script Script Lock.
-
-## Favorites
-
-Favorites are stored in Favorites and keyed by customerId.
-
-## Orders
-
-Orders are stored in Orders and OrderItems.
-
-CMS provides persistence and storage-side concurrency protection. Order domain rules remain in Core.
-
-## Order documents
-
-Order documents are generated asynchronously after the order is persisted.
-
-## Publication
-
-~~~text
-Products
- ↓
-ID
- ↓
-SKU
- ↓
-Normalize
- ↓
-Validate
- ↓
-Prepare folders
- ↓
-Validate images
- ↓
-Generate data.js
- ↓
-Write generated fields
- ↓
-Cleanup
- ↓
-Journal / report
-~~~
-
-Media refresh:
-
-~~~text
-Google Drive → MediaSync → GitHub
-~~~
-
-## Testing
-
-Node tests live under tests/.
-
-Customer concurrency suite:
-8 tests, 8 passed, 0 failed.
-
-tests/ is excluded from Apps Script upload by .claspignore.
+Other suites cover Customer, Orders, order documents and product reservation. Run the desired suites with Node's test runner; tests are excluded from Apps Script upload by `.claspignore`.
 
 ## Development workflow
 
-~~~text
-Understand
- ↓
-Implement
- ↓
-Test
- ↓
-Review diff
- ↓
-Git commit
- ↓
-Git push
- ↓
-clasp push
- ↓
-Update intended deployment
- ↓
-Production smoke test
-~~~
+```text
+Understand → implement → test → review diff → commit on a topic branch
+→ push branch → open Pull Request → review/merge separately
+```
 
-GitHub commits and Apps Script deployment versions are separate.
+Apps Script source and deployment versions are separate from Git commits. Follow [Development Guide](Development%20Guide.md) before a controlled Apps Script update.
 
-## Current checkpoint
+## Operational checkpoint
 
-As of 2026-10-06:
-- GitHub main: 2cf815f;
-- Customer concurrency fix: complete;
-- Customer tests: 8/8;
-- production Apps Script deployment: @68;
-- real Telegram smoke tests passed;
-- working tree was clean after the fix.
-
-Architecture:
-Stable
-
-Development:
-Active
-
-## Next areas
-
-- validation diagnostics;
-- remaining secret storage review;
-- Core ↔ CMS boundary review;
-- integration/concurrency testing;
-- long-term Telegram authentication review.
+The repository checkpoint above is confirmed by GitHub. Deployment version 71 and the deployment title are supplied by the project owner and cannot be verified from GitHub. The repository does not show whether the monthly Media Audit trigger is installed in the live Apps Script project.

@@ -1,204 +1,122 @@
 # PREVIA CMS Services
 
-Documentation revision: 2026-10-06
-Status: Production
+Documentation revision: 2026-11-08  
+Status: Active
 
 ## Purpose
 
-Current responsibility map for the CMS modules.
+Current module responsibility map. The repository tree remains the authoritative exact file list.
 
-## Configuration
+## Configuration and storage
 
 ### Config.js
+Reads project configuration from the Config sheet. Secrets must not be exposed to browser code.
 
-Reads project configuration from the Config sheet.
+### Drive.js
+Reads Drive folders, product image inventory and file bytes. It distinguishes a missing SKU folder from other Drive errors; callers can preserve prior published media on a missing folder.
 
-### ExchangeRate.js
+### GitHub.js
+Provides GitHub API helpers for catalog files and the Git Data API used by MediaSync V3. The V3 flow reads branch/tree/blob state, creates blobs/trees/commits and updates a ref without force. Legacy file helpers remain available to other modules.
 
-Provides exchange-rate support.
-
-## Catalog
+## Catalog and incoming products
 
 ### Products.js
-Product catalog access and persistence.
+Catalog input and persistence.
 
-### IdGenerator.js
-Sequential product IDs.
-
-### SkuGenerator.js
-Category-based SKUs.
+### IdGenerator.js / SkuGenerator.js
+Product ID and SKU generation.
 
 ### Normalizer.js
-Safe text/format normalization.
+Product text/format normalization.
 
 ### Validation.js
-Catalog and image validation.
-
-## Incoming
+Catalog validation and Drive image filename validation. `validateImages()` does not start MediaSync, hash image content or call GitHub.
 
 ### IncomingValidator.js
 Validates new products and Incoming folders.
 
 ### IncomingPublisher.js
-Creates permanent product folders, processes incoming images and cleans successful Incoming data.
-
-## Storage
-
-### Drive.js
-Google Drive operations.
-
-### GitHub.js
-GitHub API integration and published-file operations.
+Creates permanent product folders, copies incoming images and cleans successfully processed incoming data.
 
 ## Publication
 
 ### Publish.js
-Central publication orchestrator.
-
-### PublishReport.js
-Publication report.
-
-### PublicationJournal.js
-Publication history.
+Orchestrates Publish Boutique. It can publish `data.js` without running MediaSync.
 
 ### DataGenerator.js
-Generates public data.js.
+Builds public catalog data and image paths. Given a manifest, paths use manifest filenames; otherwise the fallback reads product image names from Drive.
 
 ### SpreadsheetWriter.js
-Writes generated catalog fields.
+Writes generated catalog fields to Sheets.
 
-## Media
+### PublishReport.js / PublicationJournal.js
+Publication report and persisted publication history.
+
+## Media synchronization
 
 ### MediaSync.js
-Synchronizes Google Drive media to the published GitHub media state.
+Owns Drive-to-GitHub media planning, manifest reconciliation, audit mode, checkpoint state, continuation, retries, locking, ownership and run status.
+
+Public entry points:
+- `refreshMedia()` in Publish.js;
+- `refreshImages()` in RefreshService.js;
+- `startMediaSyncAudit()` for a manual or time-triggered full audit;
+- `setupMediaSyncAuditWorker()` to replace/install the recurring audit trigger.
+
+Both ordinary media entry points call `syncMedia()`. Catalog publication and `validateImages()` do not.
 
 ### ImagePublisher.js
-Publishes product images.
+Contains older per-file publication helpers (`publishProductImage`, `publishProductImages`, `publishAllImages`) and test helpers. A repository-wide source scan at this checkpoint found no call sites outside ImagePublisher.js; neither the Dashboard nor Publish Boutique uses it. It is retained code, not the current Refresh Images pipeline.
 
-## Customer
+### RefreshService.js
+Dashboard wrapper: `refreshImages()` delegates to `syncMedia()`.
 
-### CustomerModel.js
-Immutable Customer representation.
+## Customer and Favorites
 
-### CustomerRepository.js
-Customers-sheet persistence.
+### CustomerModel.js / CustomerRepository.js / CustomerService.js / CustomerAPI.js
+Customer representation, sheet persistence, identity lookup and get-or-create. The service protects lookup and ID creation with Script Lock.
 
-Columns:
-customerId, provider, providerId, displayName, username, createdAt, updatedAt, status.
-
-### CustomerService.js
-Customer lookup and get-or-create.
-
-Concurrency:
-getScriptLock → findByProvider → generate ID → create → releaseLock.
-
-Customer IDs use the maximum existing numeric ID.
-
-### CustomerAPI.js
-Customer domain operations for the endpoint layer.
-
-## Favorites
-
-### FavoritesModel.js
-Immutable Favorite representation.
-
-### FavoritesRepository.js
-Favorites-sheet persistence.
-
-### FavoritesService.js
-Favorites operations and duplicate prevention.
-
-### FavoritesAPI.js
-Favorites domain operations.
+### FavoritesModel.js / FavoritesRepository.js / FavoritesService.js / FavoritesAPI.js
+Favorites representation, persistence and duplicate prevention.
 
 ## API and authentication
 
 ### WebApp.js
-Single doGet/doPost entry point and API dispatcher.
+Single `doGet`/`doPost` entry point and API dispatcher.
 
-### CustomerEndpoint.js
-Customer request validation/delegation.
+### Api/*
+Customer, Favorites, Product and Order endpoints plus centralized Order authentication.
 
-### FavoritesEndpoint.js
-Favorites request validation/delegation.
-
-### ProductEndpoint.js
-Product lookup.
-
-### OrderEndpoint.js
-Order request validation/delegation.
-
-### OrderAuthentication.js
-Central Core HMAC verification.
-
-Current values:
-- version: v1;
-- key id: core-v1;
-- timestamp tolerance: 5 minutes;
-- secret property: PREVIA_CORE_HMAC_SECRET.
-
-## Orders
+## Orders and documents
 
 ### Orders.js
-Storage-side order persistence and concurrency coordination.
+Storage-side order validation, concurrency and persistence for Orders/OrderItems. Core remains the owner of shared order domain rules.
 
-It validates schema/payload, checks duplicate order IDs, checks product availability, reserves products, persists Orders/OrderItems with Sheets batchUpdate, assigns public order numbers and initializes asynchronous queue state.
+### OrderSchemaValidator.js / OrderRepositoryAdapter.js
+Schema validation and persistence adapter.
 
-Order domain rules remain in Core.
+### OrderDocumentQueue.js / OrderDocumentService.js
+Asynchronous order document processing and status updates.
 
-### OrderSchemaValidator.js
-Orders and OrderItems schema/payload validation.
+## Administration and infrastructure
 
-### OrderRepositoryAdapter.js
-Adapter between OrderEndpoint and persistence.
+### Dashboard.html / DashboardService.js
+Dashboard presentation and server-side statistics/status. Dashboard offers Refresh Images, not a Media Audit setup/run control.
 
-## Order documents
-
-### OrderDocumentQueue.js
-Marks persisted orders for asynchronous document processing.
-
-### OrderDocumentService.js
-Generates order documents and updates document state.
-
-## Administration
-
-### DashboardService.js
-Dashboard statistics.
-
-### Dashboard.html
-Administrative UI.
-
-Current actions:
-Publish, Archive, Restore, Refresh Images.
-
-### ArchiveService.js
-Archive workflow.
-
-### RestoreService.js
-Restore workflow.
-
-### LookupService.js
-Product lookup helpers.
-
-### RefreshService.js
-Dashboard wrapper around MediaSync.
-
-## Other infrastructure
-
-### Migration.js
-Migration utilities.
+### ArchiveService.js / RestoreService.js / LookupService.js
+Administrative archive, restore and product lookup operations.
 
 ### Code.js
-Spreadsheet menu and administrative entry points.
+Spreadsheet menu entry points, including Publish Boutique, Refresh Media and Setup Media Audit Worker.
+
+### Migration.js / ExchangeRate.js
+Migration and exchange-rate helpers.
 
 ## Tests
 
-tests/ contains Node tests for Customer, Orders, document contracts/services and product reservation.
+Media-related test suites:
+- `tests/media-sync.test.js`
+- `tests/github-git-data.test.js`
+- `tests/catalog-media-independence.test.js`
 
-The tests directory is excluded from Apps Script upload.
-
-## Responsibility rule
-
-If a change is shared domain/business logic, evaluate PREVIA Core first.
-
-If a change is persistence, storage, publishing or Apps Script infrastructure, it belongs in CMS.
+Other tests cover customer, orders, order documents and reservation behavior. The `tests/` directory is excluded from Apps Script upload.
