@@ -1,6 +1,6 @@
 # PREVIA CMS Services
 
-Documentation revision: 2026-10-06
+Documentation revision: 2026-11-08
 Status: Production
 
 ## Purpose
@@ -32,7 +32,7 @@ Category-based SKUs.
 Safe text/format normalization.
 
 ### Validation.js
-Catalog and image validation.
+Catalog validation and Drive image filename/duplicate-number validation. `validateImages()` does not invoke MediaSync or GitHub.
 
 ## Incoming
 
@@ -70,10 +70,10 @@ Writes generated catalog fields.
 ## Media
 
 ### MediaSync.js
-Synchronizes Google Drive media to the published GitHub media state.
+Current Drive-to-GitHub media pipeline, including manifest comparison, metadata fast path, SHA-1 verification, audit mode, Git Data API publication and checkpoint/continuation recovery. `refreshMedia()` and `refreshImages()` enter this pipeline. Catalog publication does not.
 
 ### ImagePublisher.js
-Publishes product images.
+Legacy per-file publishing helpers and test helpers. A repository-wide scan found no use by the Dashboard or primary publication pipeline, and no call sites outside ImagePublisher.js at this checkpoint. It is not the current Refresh Images implementation.
 
 ## Customer
 
@@ -169,7 +169,7 @@ Dashboard statistics.
 Administrative UI.
 
 Current actions:
-Publish, Archive, Restore, Refresh Images.
+Publish, Archive, Restore, Refresh Images. No Media Audit control is present in the Dashboard.
 
 ### ArchiveService.js
 Archive workflow.
@@ -193,7 +193,7 @@ Spreadsheet menu and administrative entry points.
 
 ## Tests
 
-tests/ contains Node tests for Customer, Orders, document contracts/services and product reservation.
+Media-related tests are `tests/media-sync.test.js`, `tests/github-git-data.test.js` and `tests/catalog-media-independence.test.js`; other suites cover Customer, Orders, document contracts/services and product reservation.
 
 The tests directory is excluded from Apps Script upload.
 

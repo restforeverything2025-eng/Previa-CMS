@@ -1,7 +1,8 @@
 # PREVIA Backup & Recovery
 
-Documentation revision: 2026-10-06
+Documentation revision: 2026-11-08
 Status: Production
+Repository checkpoint: `fa347b0ff3c3bf8a06d3cbb8a85ae27bbb9a0551`
 
 ## Purpose
 
@@ -48,16 +49,16 @@ GitHub and Apps Script deployments are separate versioning systems.
 ~~~text
 GitHub main
    ↓
-commit 2cf815f
+commit fa347b0ff3c3bf8a06d3cbb8a85ae27bbb9a0551
 
 Apps Script project
    ↓
-production deployment
+owner-reported deployment version 71
    ↓
-@68
+Previa CMS V3 - Hardened Media Sync
 ~~~
 
-A Git commit does not update an Apps Script deployment. clasp push updates project content. Deployment update is a separate operation.
+The deployment information is owner-reported and cannot be verified through GitHub. A Git commit does not update Apps Script; clasp push updates project content and deployment update is separate.
 
 ## Recovery order
 
@@ -108,9 +109,30 @@ clasp status
 clasp push
 ~~~
 
-Before pushing, compare local source with GitHub.
+Before pushing, compare local source with GitHub and inspect `clasp status` and the source diff. Preserve the existing production deployment ID and settings. Do not create a new production deployment merely because the local environment was recreated.
 
-Preserve the existing production deployment ID and its settings. Do not create a new production deployment merely because the local environment was recreated.
+Do not push or deploy during a documentation-only GitHub change.
+
+## MediaSync recovery
+
+MediaSync stores checkpoint data as a GitHub blob and the confirmed blob SHA plus run state in Script Properties. State tracks phase, base commit/tree, plan, staged objects, target commit, RunId, generation, lease, retry count and `retryNotBeforeAt`.
+
+- Execution yields before the four-minute work budget, with time reserved for commit work; the checkpoint is continued through a one-shot trigger.
+- Script Lock serializes state and trigger updates. RunId, generation and lease prevent stale/concurrent work from taking ownership.
+- After continuation, Drive inventory is verified again before later phases resume; a changed inventory causes replanning.
+- Missing SKU folders preserve old manifest entries. Other Drive errors and invalid/truncated Git trees stop planning before deletion.
+- GitHub publication uses blobs → one tree → one commit → non-force ref update. Ref update rechecks branch HEAD; an external change causes a conflict and the next recovery rebuilds from current branch state.
+- Safe transient GitHub requests have bounded retries. GitHub Retry-After is carried into `retryNotBeforeAt`; ref updates are not retried.
+- If trigger creation fails, state becomes explicitly failed for manual recovery, while the confirmed checkpoint and run/generation identity are retained. It does not loop creating triggers.
+- A no-op creates no commit.
+
+Do not clear state or triggers while a run is active. If state is terminally failed, inspect Dashboard status and Apps Script executions, identify/fix the cause, then use the authorized manual recovery path. Checkpoint scheduling failure requires owner intervention.
+
+## Checking the live Media Audit trigger
+
+`setupMediaSyncAuditWorker()` deletes existing project triggers whose handler is exactly `startMediaSyncAudit`, then creates an every-30-days time-driven trigger. A sequential setup replaces the old one; the function is not lock-protected, so simultaneous setup calls can race. If creation fails after deletion, the call throws and no audit trigger may remain. The Sheets menu exposes **Setup Media Audit Worker**; the Dashboard does not expose audit controls. Run `startMediaSyncAudit()` manually from the Apps Script function selector for an immediate audit; it refuses if MediaSync state already exists.
+
+GitHub code/tests cannot verify live trigger existence, creation date, next run, execution history or duplicates. The owner should open Apps Script **Triggers**, confirm one `startMediaSyncAudit` time-driven trigger, and check **Executions** for `startMediaSyncAudit`/`continueMediaSync`. Apps Script chooses the actual next execution time. If absent/duplicated, run the menu setup once and verify the trigger list again.
 
 ## Secrets
 

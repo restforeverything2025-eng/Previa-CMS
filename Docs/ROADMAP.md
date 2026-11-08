@@ -1,6 +1,6 @@
 # PREVIA CMS Roadmap
 
-Documentation revision: 2026-10-06
+Documentation revision: 2026-11-08
 
 ## Completed
 
@@ -31,11 +31,21 @@ Validation:
 8/8 automated tests passed.
 Two real concurrency scenarios passed.
 
-Git commit:
+Historical Git commit:
 2cf815f fix: make customer creation atomic
 
-Production deployment:
-@68
+The owner now reports Apps Script deployment version 71; GitHub cannot verify the live deployment.
+
+### MediaSync V3 — Hardened Media Sync
+
+Implemented in repository checkpoint `fa347b0ff3c3bf8a06d3cbb8a85ae27bbb9a0551`:
+- Git Data API publication with one commit for image and manifest changes;
+- checkpoint/continuation, ownership and bounded recovery;
+- missing-folder, incomplete-inventory and branch-conflict safeguards;
+- independent catalog and media pipelines;
+- audit mode and code for a 30-day time-driven trigger.
+
+The repository confirms trigger setup code, not the live trigger installation or schedule.
 
 ## Next milestones
 

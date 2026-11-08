@@ -1,6 +1,6 @@
 # PREVIA Publish Pipeline
 
-Documentation revision: 2026-10-06
+Documentation revision: 2026-11-08
 Status: Production
 
 ## Purpose
@@ -28,7 +28,7 @@ Validate Catalog
  ↓
 Prepare Product Folders
  ↓
-Validate Images
+Validate Drive image filenames
  ↓
 Generate data.js
  ↓
@@ -65,24 +65,25 @@ Because operations span Sheets, Drive and GitHub, a failure does not automatical
 
 Therefore a failed publication should be verified before retrying blindly.
 
+## Catalog and photo independence
+
+`validateImages()` checks image filenames and duplicate image numbers in Drive. It does not hash files, call GitHub or run MediaSync. `publishDataJS()` reads Drive inventory and the published manifest to build image paths; this does not start photo synchronization. This applies to the no-new-product publication path as well.
+
 ## Media refresh
 
-RefreshService calls MediaSync.
+RefreshService and Publish.js expose `refreshImages()`/`refreshMedia()` entry points that call `syncMedia()` independently of Publish Boutique.
 
-MediaSync:
-1. reads Google Drive media;
-2. reads the GitHub repository tree;
-3. compares media;
-4. uploads changed/new files;
-5. removes orphan published files;
-6. updates media-manifest.json;
-7. returns a synchronization result.
+MediaSync V3 reads Drive inventory, GitHub branch/tree and the published manifest. It compares Drive image bytes using Git blob SHA-1 when metadata cannot safely take the fast path, creates image/manifest blobs, then publishes one Git tree and one commit with a non-force ref update. Missing SKU folders and incomplete inventories are protected; continuation/recovery rechecks Drive inventory and branch HEAD.
+
+The ordinary mode can skip reading bytes when manifest metadata and GitHub SHA match. Audit mode disables that fast path for same-name files and rehashes them. It can publish changes and is not read-only. The code provides a separate every-30-days trigger setup; whether it is installed must be checked in Apps Script.
 
 Direction:
 
 ~~~text
-Google Drive → GitHub
+Google Drive → MediaSync V3 → GitHub images + media-manifest.json
 ~~~
+
+See [Architecture](Architecture.md) and [Backup & Recovery](Backup%20%26%20Recovery.md) for safety and recovery details.
 
 ## Order-triggered publication
 

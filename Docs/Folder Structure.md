@@ -1,6 +1,6 @@
 # PREVIA CMS Folder Structure
 
-Documentation revision: 2026-10-06
+Documentation revision: 2026-11-08
 Status: Production
 
 ## Purpose
@@ -100,8 +100,10 @@ Drive.js, MediaSync.js and ImagePublisher.js.
 Current direction:
 
 ~~~text
-Google Drive → GitHub published media
+Google Drive → MediaSync V3 → GitHub images + media-manifest.json
 ~~~
+
+`MediaSync.js` owns inventory comparison, audit mode, checkpoints and continuation. `GitHub.js` provides Git Data API operations. The ordinary Refresh Images action runs MediaSync; Publish Boutique does not.
 
 ## Product import and validation
 
@@ -111,7 +113,7 @@ Products.js, IncomingValidator.js, IncomingPublisher.js, Normalizer.js, Validati
 
 Dashboard.html, DashboardService.js, ArchiveService.js, RestoreService.js, LookupService.js and RefreshService.js.
 
-Dashboard actions currently include Publish, Archive, Restore and Refresh Images.
+Dashboard actions include Publish, Archive, Restore and Refresh Images. The Sheets menu also includes Setup Media Audit Worker; the Dashboard has no audit control.
 
 ## Configuration and infrastructure
 
@@ -119,7 +121,7 @@ Config.js, GitHub.js, ExchangeRate.js, Migration.js, Code.js and WebApp.js.
 
 ## Tests
 
-tests/ contains Node-based tests and is excluded from Apps Script upload by .claspignore.
+tests/ contains Node-based tests, including MediaSync, Git Data API and catalog/media independence suites, and is excluded from Apps Script upload by .claspignore.
 
 ## Runtime data
 

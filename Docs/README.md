@@ -2,8 +2,10 @@
 
 Google Apps Script based Content Management System for the PREVIA Vintage boutique.
 
-Documentation revision: 2026-10-06
+Documentation revision: 2026-11-08
 Status: Production
+Repository checkpoint: `fa347b0ff3c3bf8a06d3cbb8a85ae27bbb9a0551` (2026-11-06)
+Apps Script deployment: owner-reported version 71, `Previa CMS V3 - Hardened Media Sync` (not verifiable through GitHub)
 
 ## Overview
 
@@ -139,54 +141,41 @@ Cleanup
 Journal / report
 ~~~
 
-Media refresh:
+Catalog publication and photo synchronization are independent operations. Publish Boutique may read Drive inventory and the published media manifest to preserve image paths in `data.js`, but it does not run MediaSync.
+
+Refresh Images runs MediaSync V3:
 
 ~~~text
-Google Drive → MediaSync → GitHub
+Google Drive → MediaSync V3 → GitHub images + media-manifest.json
 ~~~
+
+See [Architecture](Architecture.md), [Publish Pipeline](Publish%20Pipeline.md) and [Backup & Recovery](Backup%20%26%20Recovery.md) for the sync, audit and recovery details.
 
 ## Testing
 
 Node tests live under tests/.
 
-Customer concurrency suite:
-8 tests, 8 passed, 0 failed.
+Media-related suites include `tests/media-sync.test.js`, `tests/github-git-data.test.js` and `tests/catalog-media-independence.test.js`. Other suites cover Customer, Orders, order documents and product reservation.
 
 tests/ is excluded from Apps Script upload by .claspignore.
 
 ## Development workflow
 
 ~~~text
-Understand
- ↓
-Implement
- ↓
-Test
- ↓
-Review diff
- ↓
-Git commit
- ↓
-Git push
- ↓
-clasp push
- ↓
-Update intended deployment
- ↓
-Production smoke test
+Understand → implement → test → review diff → commit on a topic branch → push branch → open Pull Request → review/merge separately.
 ~~~
+
+Apps Script source and deployment versions are separate from Git commits. The repository does not verify the live deployment or whether the Media Audit trigger is installed.
 
 GitHub commits and Apps Script deployment versions are separate.
 
 ## Current checkpoint
 
-As of 2026-10-06:
-- GitHub main: 2cf815f;
-- Customer concurrency fix: complete;
-- Customer tests: 8/8;
-- production Apps Script deployment: @68;
-- real Telegram smoke tests passed;
-- working tree was clean after the fix.
+As of 2026-11-08:
+- GitHub `main`: `fa347b0ff3c3bf8a06d3cbb8a85ae27bbb9a0551`;
+- MediaSync V3 implementation is present in the repository;
+- the owner reports Apps Script deployment version 71 (`Previa CMS V3 - Hardened Media Sync`); GitHub cannot verify the live deployment;
+- the repository does not show whether the 30-day Media Audit trigger is installed.
 
 Architecture:
 Stable

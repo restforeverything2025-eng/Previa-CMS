@@ -1,6 +1,6 @@
 # PREVIA Development Guide
 
-Documentation revision: 2026-10-06
+Documentation revision: 2026-11-08
 Status: Active
 
 ## 1. One module = one responsibility
@@ -38,15 +38,7 @@ Persistence-level atomicity is valid in CMS when required to protect shared stor
 
 ## 4. Validation before publication
 
-Normal publication order:
-
-~~~text
-Normalize
- ↓
-Validate
- ↓
-Publish
-~~~
+Catalog publication and photo sync are independent. `validateImages()` checks Drive image filenames and duplicate numbers only; `publishDataJS()` reads Drive inventory and the published manifest to generate paths without calling `syncMedia()`. Refresh Images is the explicit photo-sync path. Preserve this boundary and the missing-folder safeguards.
 
 Never bypass validation merely to make publication succeed.
 
@@ -118,20 +110,12 @@ Smoke test
 
 Tests live in tests/.
 
-Current groups include:
-- Customer concurrency;
-- Orders;
-- order document contract;
-- order document service;
-- product reservation.
+Current groups include Customer, Orders, order documents and product reservation, plus:
+- `tests/media-sync.test.js`;
+- `tests/github-git-data.test.js`;
+- `tests/catalog-media-independence.test.js`.
 
-Customer suite:
-
-~~~text
-8 tests
-8 passed
-0 failed
-~~~
+The MediaSync tests cover recovery, conflict/trigger safety, missing-folder and truncated-tree behavior, legacy manifest migration and audit hashing. The audit trigger installation/real schedule is not covered by an automated test.
 
 tests/ is excluded from Apps Script upload by .claspignore.
 
@@ -145,8 +129,9 @@ git diff
 git diff --check
 git add only intended files
 git diff --cached
-git commit
-git push origin main
+git commit on a topic branch
+git push origin <topic-branch>
+open Pull Request for review
 ~~~
 
 Do not blindly use git add . when unrelated local files may exist.
@@ -157,13 +142,13 @@ Use:
 
 ~~~text
 clasp status
-clasp push
-verify deployment
-update intended deployment
-smoke test
+review source diff
+clasp push only after approval
+verify/update intended deployment separately
+controlled smoke test
 ~~~
 
-GitHub commit and Apps Script deployment version are separate.
+GitHub commit and Apps Script deployment version are separate. The owner reports deployment 71 (`Previa CMS V3 - Hardened Media Sync`), but GitHub cannot verify the live deployment or Media Audit trigger.
 
 ## 14. No unapproved infrastructure changes
 

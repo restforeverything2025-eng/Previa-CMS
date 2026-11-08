@@ -1,8 +1,8 @@
 # PREVIA CMS Ideas and Future Work
 
-Documentation revision: 2026-10-06
+Documentation revision: 2026-11-08
 
-This file contains future work only.
+This file contains future work and selected completion history. MediaSync operations are documented in [Architecture](Architecture.md) and [Backup & Recovery](Backup%20%26%20Recovery.md).
 
 ## Validation v2.0
 
@@ -76,8 +76,11 @@ Completed:
 Result:
 8/8 automated tests passed.
 
-Git commit:
+Historical Git commit:
 2cf815f fix: make customer creation atomic
 
-Production:
-@68
+The owner reports Apps Script deployment version 71, superseding the former @68 reference; GitHub cannot verify the live deployment.
+
+### MediaSync V3 — 2026-11
+
+Repository checkpoint `fa347b0ff3c3bf8a06d3cbb8a85ae27bbb9a0551` contains Git Data API publication, checkpoint/continuation recovery, safe ref updates, audit mode and catalog/media separation. The owner reports deployment 71 (`Previa CMS V3 - Hardened Media Sync`). Live deployment and trigger state are not verifiable from GitHub.

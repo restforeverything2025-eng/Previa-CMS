@@ -1,7 +1,8 @@
 # PREVIA CMS Architecture
 
-Documentation revision: 2026-10-06
+Documentation revision: 2026-11-08
 System status: Production
+Repository checkpoint: `fa347b0ff3c3bf8a06d3cbb8a85ae27bbb9a0551`
 
 ## Purpose
 
@@ -149,9 +150,9 @@ Cleanup Incoming
 Journal / Report
 ~~~
 
-If there are no new products, the implementation can publish data.js without the new-product preparation stages.
+If there are no new products, the implementation can publish `data.js` without the new-product preparation stages. `validateImages()` checks Drive image filenames and duplicate image numbers; it does not start MediaSync, hash files or call GitHub. `publishDataJS()` reads Drive inventory and the published manifest to preserve image paths, but does not start MediaSync.
 
-The pipeline stops on errors, but it is not a database transaction. It spans Google Sheets, Google Drive and GitHub, so a failure does not automatically roll back every earlier external operation.
+The catalog pipeline stops on errors, but it is not a database transaction. It spans Google Sheets, Google Drive and GitHub, so a failure does not automatically roll back every earlier external operation. Photo synchronization is a separate operation.
 
 ## Media synchronization
 
@@ -165,7 +166,11 @@ MediaSync
 GitHub published media
 ~~~
 
-MediaSync reads Drive state, reads the GitHub repository tree, compares media, uploads changed/new files, removes orphan published files and updates media-manifest.json.
+MediaSync V3 inventories Drive for catalog SKUs, reads the GitHub branch/tree and `media-manifest.json`, then plans file and manifest changes. A missing SKU folder is recorded separately and its previous manifest entry is retained; other Drive read failures stop planning. Invalid or truncated GitHub trees stop before destructive planning.
+
+Normal mode uses a metadata fast path only when Drive ID, size and update timestamp match the prior manifest and the manifest GitHub blob SHA matches the current tree SHA. Otherwise it reads Drive bytes and calculates the Git blob SHA-1 (`SHA1("blob " + byteLength + NUL + bytes)`). A legacy manifest without `githubSha` requires hashing but does not itself force a photo upload. Audit mode bypasses the metadata fast path for matching names and re-hashes their Drive bytes. The planner can upload new/changed files, delete extra files within inventoried SKUs with successfully read folders, and update the manifest. It is not image decoding or a repository-wide cleanup of unknown paths.
+
+GitHub publication stages blobs, creates one tree and one commit for image/manifest changes, then updates the branch ref with `force:false` after rechecking HEAD. No-op plans create no commit. Conflict, checkpoint, continuation and failure details are in [Backup & Recovery](Backup%20%26%20Recovery.md).
 
 This is Drive → GitHub synchronization, not a bidirectional media store.
 
@@ -181,7 +186,7 @@ It currently:
 - launches Restore;
 - launches Refresh Images.
 
-Dashboard.html is presentation/interaction UI. Server-side modules perform the actual operations.
+Dashboard.html is presentation/interaction UI. Server-side modules perform the actual operations. It has a Refresh Images action, but no Media Audit setup/run control. The spreadsheet menu provides **Setup Media Audit Worker**; `startMediaSyncAudit()` is also callable from the Apps Script function selector.
 
 ## Orders
 
@@ -213,10 +218,8 @@ When documentation and code disagree, inspect the current code first and then up
 
 ## Current operational checkpoint
 
-As of 2026-10-06:
-- GitHub main: 2cf815f.
-- Customer concurrency fix: complete.
-- Production Apps Script deployment: @68.
-- Customer tests: 8/8.
-- Real Telegram smoke tests: passed.
-- CMS is not bound to a GCP project for Execution API use.
+Repository checkpoint: `fa347b0ff3c3bf8a06d3cbb8a85ae27bbb9a0551` (2026-11-06). The owner reports Apps Script deployment version 71, `Previa CMS V3 - Hardened Media Sync`; GitHub cannot verify the live deployment or installed triggers.
+
+Media Audit code uses a time-driven `everyDays(30)` trigger after deleting existing triggers with handler `startMediaSyncAudit`. Setup errors propagate; simultaneous setup calls are not lock-protected and could race. The actual trigger, its next run and execution history require a check in Apps Script. The audit recomputes Git blob SHA for same-name current files and can publish differences; it is not read-only. The automated MediaSync suite tests audit hashing but does not test trigger installation or live schedule behavior.
+
+CMS is not bound to a GCP project for Execution API use.
