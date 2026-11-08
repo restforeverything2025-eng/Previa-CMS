@@ -1,66 +1,178 @@
 # PREVIA Backup & Recovery
 
-Documentation revision: 2026-11-08  
-Status: Active
+Documentation revision: 2026-11-08
+Status: Production
+Repository checkpoint: `fa347b0ff3c3bf8a06d3cbb8a85ae27bbb9a0551`
 
-## Purpose and recoverable components
+## Purpose
 
-Recovery may involve:
-1. Google Sheets: Products, Config, Customers, Favorites, Orders, OrderItems, PublicationJournal and other runtime sheets.
-2. Google Drive: Products images, Incoming and order documents.
-3. Google Apps Script: source, Script Properties, triggers and deployments.
-4. GitHub: source, documentation, tests and public catalog/media.
-5. Local development environment and clasp configuration.
+Restore PREVIA after hardware failure, computer replacement, accidental data loss or loss of the local development environment.
 
-GitHub and Apps Script deployments are separate versioning systems. A Git commit does not update Apps Script; `clasp push` changes project content, while updating a deployment is a separate operation.
+## Components
 
-The project owner reports deployment version 71 (`Previa CMS V3 - Hardened Media Sync`) for the operational checkpoint. GitHub cannot verify the live deployment, Script Properties or triggers.
+1. Google Sheets
+   - Products
+   - Config
+   - Customers
+   - Favorites
+   - Orders
+   - OrderItems
+   - PublicationJournal
+   - other runtime sheets used by CMS
 
-## MediaSync state and recovery
+2. Google Drive
+   - Products images
+   - Incoming
+   - PREVIA/ORDERS documents
 
-MediaSync persists run ownership and progress in Script Properties and stores checkpoint content as a GitHub blob referenced by its SHA. Checkpoint state includes the run/generation, phase, base commit/tree, plan, staged blob SHAs and target commit/tree as applicable.
+3. Google Apps Script
+   - CMS source
+   - Script Properties
+   - triggers
+   - deployments
 
-- **Time limit:** execution yields before the configured budget (4 minutes), reserving time for commit work. The checkpoint is saved and a continuation is scheduled.
-- **Ownership:** Script Lock serializes state/trigger changes; RunId, generation and a lease fence stale or concurrent executions.
-- **Continuation:** retry deadline `retryNotBeforeAt` is retained in state; trigger delay respects the deadline and Apps Script minimum trigger delay. A stale trigger cannot claim work before the deadline.
-- **Revalidation:** after a continuation, Drive inventory is read again before resuming a later phase. If it changed, the plan is rebuilt.
-- **Retry:** bounded automatic retry count is three. Recognized transient GitHub status/network failures may retry safe GET/blob/tree/deterministic-commit requests. Ref updates are not retried. Retry-After can defer the next attempt.
-- **Conflict:** branch HEAD is rechecked and the ref update uses `force:false`. A conflict does not overwrite the external update; a later recovery starts from current branch state and replans.
-- **Incomplete inventories:** Drive read failures and invalid/truncated GitHub trees stop the run before destructive planning. Missing SKU folders are preserved from the prior manifest and are not treated as empty.
-- **Checkpoint scheduling failure:** state is marked failed for manual recovery while the confirmed checkpoint SHA and run identity are retained. Automatic retries stop rather than loop when a continuation trigger cannot be created.
-- **No-op:** if files and manifest do not change, the run finalizes without creating a Git commit.
+4. GitHub
+   - PREVIA source repositories
+   - documentation
+   - tests
 
-Do not manually clear MediaSync Script Properties or remove triggers while a run is active. First inspect the Dashboard media status and Apps Script executions; preserve the checkpoint SHA and investigate the failure before recovery. If status is terminally failed, a manual `syncMedia()`/refresh may start recovery after the cause is fixed. A failed audit-trigger scheduling state may require an owner to repair/reinstall the trigger.
+5. Documentation
+   - architecture
+   - development rules
+   - recovery
+   - roadmap
+
+## Important versioning rule
+
+GitHub and Apps Script deployments are separate versioning systems.
+
+~~~text
+GitHub main
+   ↓
+commit fa347b0ff3c3bf8a06d3cbb8a85ae27bbb9a0551
+
+Apps Script project
+   ↓
+owner-reported deployment version 71
+   ↓
+Previa CMS V3 - Hardened Media Sync
+~~~
+
+The deployment information is owner-reported and cannot be verified through GitHub. A Git commit does not update Apps Script; clasp push updates project content and deployment update is separate.
+
+## Recovery order
+
+~~~text
+Google Account access
+ ↓
+GitHub repositories
+ ↓
+local environment
+ ↓
+Apps Script source
+ ↓
+Script Properties / triggers / deployment
+ ↓
+Google Sheets
+ ↓
+Google Drive
+ ↓
+frontend
+ ↓
+functional verification
+~~~
+
+## GitHub recovery
+
+Clone the repository and verify:
+
+~~~text
+git status
+git log -1 --oneline
+~~~
+
+The Customer concurrency rollback checkpoint created before the fix is:
+
+~~~text
+pre-customer-concurrency-fix-2026-10-05
+~~~
+
+Do not delete or rewrite it without an explicit recovery reason.
+
+## Apps Script recovery
+
+Install Node.js, npm and clasp.
+
+~~~text
+clasp login
+clasp status
+clasp push
+~~~
+
+Before pushing, compare local source with GitHub and inspect `clasp status` and the source diff. Preserve the existing production deployment ID and settings. Do not create a new production deployment merely because the local environment was recreated.
+
+Do not push or deploy during a documentation-only GitHub change.
+
+## MediaSync recovery
+
+MediaSync stores checkpoint data as a GitHub blob and the confirmed blob SHA plus run state in Script Properties. State tracks phase, base commit/tree, plan, staged objects, target commit, RunId, generation, lease, retry count and `retryNotBeforeAt`.
+
+- Execution yields before the four-minute work budget, with time reserved for commit work; the checkpoint is continued through a one-shot trigger.
+- Script Lock serializes state and trigger updates. RunId, generation and lease prevent stale/concurrent work from taking ownership.
+- After continuation, Drive inventory is verified again before later phases resume; a changed inventory causes replanning.
+- Missing SKU folders preserve old manifest entries. Other Drive errors and invalid/truncated Git trees stop planning before deletion.
+- GitHub publication uses blobs → one tree → one commit → non-force ref update. Ref update rechecks branch HEAD; an external change causes a conflict and the next recovery rebuilds from current branch state.
+- Safe transient GitHub requests have bounded retries. GitHub Retry-After is carried into `retryNotBeforeAt`; ref updates are not retried.
+- If trigger creation fails, state becomes explicitly failed for manual recovery, while the confirmed checkpoint and run/generation identity are retained. It does not loop creating triggers.
+- A no-op creates no commit.
+
+Do not clear state or triggers while a run is active. If state is terminally failed, inspect Dashboard status and Apps Script executions, identify/fix the cause, then use the authorized manual recovery path. Checkpoint scheduling failure requires owner intervention.
 
 ## Checking the live Media Audit trigger
 
-The repository proves that `setupMediaSyncAuditWorker()` deletes existing triggers handled by `startMediaSyncAudit` before creating an every-30-days time-based trigger. Only matching handler triggers are deleted; other project triggers are left alone. Sequential setup calls replace the prior trigger. Setup has no lock, so concurrent setup calls could race. If creation fails after deletion, the setup call throws and no audit trigger may remain. The source and automated tests cannot prove the live Apps Script trigger inventory or run history; the setup function itself has no dedicated automated test.
+`setupMediaSyncAuditWorker()` deletes existing project triggers whose handler is exactly `startMediaSyncAudit`, then creates an every-30-days time-driven trigger. A sequential setup replaces the old one; the function is not lock-protected, so simultaneous setup calls can race. If creation fails after deletion, the call throws and no audit trigger may remain. The Sheets menu exposes **Setup Media Audit Worker**; the Dashboard does not expose audit controls. Run `startMediaSyncAudit()` manually from the Apps Script function selector for an immediate audit; it refuses if MediaSync state already exists.
 
-Owner self-check in the Apps Script project:
-1. Open **Triggers** (clock icon) in the Apps Script editor.
-2. Find handler `startMediaSyncAudit`; confirm exactly one time-driven trigger and inspect its event source/type and schedule.
-3. Check Apps Script **Executions** for completed/failed runs of `startMediaSyncAudit` and `continueMediaSync`.
-4. If the trigger is absent or duplicated, use the spreadsheet menu **PREVIA CMS → Setup Media Audit Worker** once, then reopen Triggers and verify one handler entry. This setup deletes existing project triggers with that same handler before creating its replacement.
-5. Apps Script chooses the actual next execution time for time-driven triggers; do not infer a precise next-run timestamp from the source's 30-day interval.
+GitHub code/tests cannot verify live trigger existence, creation date, next run, execution history or duplicates. The owner should open Apps Script **Triggers**, confirm one `startMediaSyncAudit` time-driven trigger, and check **Executions** for `startMediaSyncAudit`/`continueMediaSync`. Apps Script chooses the actual next execution time. If absent/duplicated, run the menu setup once and verify the trigger list again.
 
-The Dashboard has no Media Audit setup/run control. To run an audit immediately, select `startMediaSyncAudit` from the Apps Script function selector and run it. It will refuse if MediaSync state already exists. This manual check/run is outside GitHub verification.
+## Secrets
 
-## General recovery order
+The Core → CMS HMAC secret is stored in Script Properties under PREVIA_CORE_HMAC_SECRET.
 
-```text
-Google Account access → GitHub → local environment → Apps Script source
-→ Script Properties/triggers/deployment → Sheets → Drive → frontend
-→ functional verification
-```
+It must never be committed to GitHub or placed in frontend code.
 
-Clone/restore source from the intended GitHub commit. Before any Apps Script write, compare local source with the target repository/deployment and preserve the current production deployment settings. Do not push or redeploy merely because a local environment was recreated.
+## Google Sheets
 
-## Secrets and runtime data
+Verify at minimum:
 
-The Core → CMS HMAC secret is stored in Script Properties under `PREVIA_CORE_HMAC_SECRET`. Never commit it or place it in frontend code. Restore secrets through secure configuration, not source control. Verify production Sheets and Drive folders before recreating anything.
+- Products;
+- Config;
+- Customers;
+- Favorites;
+- Orders;
+- OrderItems;
+- PublicationJournal.
 
-## Functional recovery
+Do not recreate production sheets blindly.
 
-After source and service access are restored, verify Dashboard status, catalog, image paths, Customer/Favorites, Orders and public site. Use a controlled media test only after reviewing the current checkpoint, inventory and intended target branch.
+## Google Drive
 
-Source code is recoverable from GitHub; runtime data and secrets require their respective Google services and secure configuration.
+Verify:
+
+- Products;
+- Incoming;
+- product SKU folders;
+- PREVIA/ORDERS.
+
+## Functional recovery test
+
+Open CMS → Dashboard → verify statistics → verify Customer/Favorites data → verify Orders → run a safe publication/media test → open public website.
+
+Customer recovery should include a repeated authentication check to ensure the same provider identity does not create a duplicate Customer.
+
+## Success criteria
+
+Recovery is complete when CMS, Sheets, Drive, authentication, Dashboard, publication, media synchronization, Customer records, Orders and the public website are working.
+
+## Disaster recovery rule
+
+Source code is recoverable from GitHub. Runtime business data is recovered from Google services. Secrets are restored through secure configuration, not source control.

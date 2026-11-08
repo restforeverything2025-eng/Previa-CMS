@@ -2,7 +2,7 @@
 
 Documentation revision: 2026-11-08
 
-This file contains future work and selected completion history. MediaSync behavior and operations are documented in [Architecture](Architecture.md) and [Backup & Recovery](Backup%20%26%20Recovery.md).
+This file contains future work and selected completion history. MediaSync operations are documented in [Architecture](Architecture.md) and [Backup & Recovery](Backup%20%26%20Recovery.md).
 
 ## Validation v2.0
 
@@ -19,14 +19,19 @@ Goals:
 
 ## Security v2
 
-The Core → CMS HMAC secret already uses Script Properties. The Config sheet still contains sensitive legacy values such as GitHub/payment-related configuration.
+The Core → CMS HMAC secret already uses Script Properties.
+
+The Config sheet still contains sensitive legacy values such as GitHub/payment-related configuration.
 
 Future work should evaluate migration of remaining secrets to secure storage with a migration plan.
 
 ## Authentication review
 
-Review the long-term Telegram authentication path:
-- stable provider identity and Customer ID;
+Review the long-term Telegram authentication path.
+
+Requirements:
+- stable provider identity;
+- stable Customer ID;
 - no duplicate Customer creation;
 - session continuity;
 - Favorites continuity;
@@ -35,10 +40,11 @@ Review the long-term Telegram authentication path:
 ## Core ↔ CMS boundary review
 
 Continue checking new functionality against:
-```text
+
+~~~text
 Core → business/domain rules
 CMS  → persistence/infrastructure
-```
+~~~
 
 ## Testing improvements
 
@@ -50,7 +56,7 @@ Potential future improvements:
 - document queue tests;
 - publication queue tests.
 
-The repository does not establish an Apps Script Execution API project binding.
+The current CMS is not configured for Apps Script Execution API testing through GCP.
 
 ## Mobile CMS UX
 
@@ -64,10 +70,17 @@ Completed:
 - Script Lock around Customer get-or-create;
 - provider lookup inside the lock;
 - maximum-existing-ID generation;
-- automated Customer tests.
+- automated Customer tests;
+- real Telegram smoke tests.
 
-Historical repository commit: `2cf815f`. Earlier documentation reported Telegram smoke tests; those external executions cannot be verified from GitHub.
+Result:
+8/8 automated tests passed.
+
+Historical Git commit:
+2cf815f fix: make customer creation atomic
+
+The owner reports Apps Script deployment version 71, superseding the former @68 reference; GitHub cannot verify the live deployment.
 
 ### MediaSync V3 — 2026-11
 
-Current code includes Git Data API media publication, checkpoint/continuation recovery, safe ref updates, audit mode and catalog/media separation. The owner reports Apps Script deployment version 71 (`Previa CMS V3 - Hardened Media Sync`); GitHub cannot verify the live deployment or installed triggers.
+Repository checkpoint `fa347b0ff3c3bf8a06d3cbb8a85ae27bbb9a0551` contains Git Data API publication, checkpoint/continuation recovery, safe ref updates, audit mode and catalog/media separation. The owner reports deployment 71 (`Previa CMS V3 - Hardened Media Sync`). Live deployment and trigger state are not verifiable from GitHub.

@@ -1,99 +1,177 @@
 # PREVIA Development Guide
 
-Documentation revision: 2026-11-08  
+Documentation revision: 2026-11-08
 Status: Active
 
-## 1. Module boundaries
+## 1. One module = one responsibility
 
 Examples:
-- Drive.js → Google Drive operations.
-- GitHub.js → GitHub API operations.
+- Drive → Google Drive operations.
+- GitHub → GitHub API operations.
 - CustomerRepository → Customer persistence.
 - CustomerService → Customer registry logic.
-- Publish.js → catalog publication orchestration.
-- MediaSync.js → media synchronization and recovery.
-- DashboardService.js → Dashboard statistics/status.
+- Publish → publication orchestration.
+- DashboardService → Dashboard statistics.
 
-Before adding logic to CMS, decide whether it belongs to persistence/infrastructure or to shared domain rules in PREVIA Core.
+## 2. Respect the Core → CMS boundary
 
-## 2. Sources of truth
+Core is the shared domain/service layer.
 
-- Catalog and project configuration → Google Sheets.
-- Product images → Google Drive.
-- Customer, Favorites and Orders → their Sheets.
+CMS is the persistence and infrastructure layer.
+
+Before adding logic to CMS ask:
+
+> Is this a storage/infrastructure concern, or a shared domain rule?
+
+Persistence-level atomicity is valid in CMS when required to protect shared storage. Customer get-or-create is an example.
+
+## 3. Single source of truth
+
+- Catalog → Google Sheets.
+- Images → Google Drive.
+- Customers → Customers sheet.
+- Favorites → Favorites sheet.
+- Orders → Orders and OrderItems.
+- Configuration → Config sheet.
 - Core → CMS HMAC secret → Script Properties.
-- Public generated catalog and media → GitHub publication target.
+- Public generated catalog → GitHub.
 
-Do not treat GitHub's published files as authoritative business data.
+## 4. Validation before publication
 
-## 3. Keep catalog and media operations independent
+Catalog publication and photo sync are independent. `validateImages()` checks Drive image filenames and duplicate numbers only; `publishDataJS()` reads Drive inventory and the published manifest to generate paths without calling `syncMedia()`. Refresh Images is the explicit photo-sync path. Preserve this boundary and the missing-folder safeguards.
 
-Publish Boutique validates and publishes catalog data. Refresh Images calls MediaSync. `validateImages()` reads Drive image names and checks duplicate image numbers; it does not call GitHub or sync photos. `publishDataJS()` can read Drive inventory and the published manifest to build paths, without starting MediaSync.
+Never bypass validation merely to make publication succeed.
 
-Do not join the two flows or add an implicit `syncMedia()` call to catalog validation/publication. Regression coverage is in `tests/catalog-media-independence.test.js`.
+## 5. Concurrency
 
-## 4. MediaSync safety
+Any operation that reads shared state, calculates a new value and writes it must be checked for race conditions.
 
-Changes to media behavior require review of:
-- Drive inventory errors versus missing SKU folders;
-- metadata fast path and Git blob SHA-1 comparison;
-- normal versus audit mode;
-- plan scope and deletion guards;
-- atomic blob → tree → commit → non-force ref sequence;
-- branch conflicts and retry safety;
-- checkpoint integrity, RunId, generation, lease, Script Lock and continuation;
-- Retry-After and Apps Script execution budget;
-- trigger creation failure/manual recovery.
+Relevant CMS examples:
+- Customer ID generation;
+- Customer creation;
+- order creation;
+- product reservation;
+- public order number generation.
 
-See [Architecture](Architecture.md) and [Backup & Recovery](Backup%20%26%20Recovery.md). Do not describe the scheduled audit as installed without checking the live Apps Script project.
+Customer creation uses Apps Script Script Lock around lookup → ID generation → create.
 
-## 5. Concurrency and authentication
+Official reference:
+https://developers.google.com/apps-script/reference/lock/lock-service
 
-Any shared read/calculate/write flow must be checked for races. Customer creation uses Script Lock around lookup, ID generation and create. The browser must never receive the Core → CMS HMAC secret. Authentication is centralized; do not create endpoint-specific variants without review.
+## 6. Authentication boundary
 
-## 6. Publication is not a transaction
+The browser must never receive the Core → CMS HMAC secret.
 
-Catalog stages span Sheets, Drive and GitHub. Earlier external changes are not automatically rolled back after a later failure. Verify state before retrying a failed operation.
+WebApp verifies the authenticated envelope before dispatch.
 
-## 7. Tests
+Authentication implementation is centralized in Api/OrderAuthentication.js.
 
-Tests live in `tests/` and run under Node's test runner. Relevant suites include:
-- `tests/media-sync.test.js`
-- `tests/github-git-data.test.js`
-- `tests/catalog-media-independence.test.js`
-- Customer, Orders, order document and reservation suites.
+Do not create endpoint-specific authentication variants without architectural review.
 
-Run affected suites and the full available suite locally before proposing code changes. Tests are excluded from Apps Script upload by `.claspignore`.
+## 7. Public functions only
 
-## 8. Git workflow
+Services communicate through their public functions. Do not reach into another module's private implementation.
 
-Use an isolated topic branch and a Pull Request; do not push directly to `main`.
+## 8. Publication stability
 
-```text
-inspect status → edit intended files → run tests → review diff and diff-check
-→ commit topic branch → push branch → open PR → review and merge separately
-```
+Do not reorder publication stages without architecture review, tests, documentation and failure-path review.
 
-Stage only intended files. Keep review notes and temporary files out of production commits.
+## 9. Publication is not a database transaction
 
-## 9. Apps Script workflow
+The pipeline stops on errors, but it spans Sheets, Drive and GitHub. Earlier external changes are not automatically rolled back.
 
-GitHub commit and Apps Script deployment version are separate.
+## 10. Test before production
 
-Before a controlled Apps Script update:
-1. verify the intended source branch/commit and local clasp project;
-2. inspect `clasp status` and the source diff;
-3. confirm excluded files and project settings;
-4. push only after review;
-5. update the intended deployment separately;
-6. check triggers and executions, then run the approved smoke test.
+Recommended cycle:
 
-Do not deploy as part of a Git-only documentation change. The reported deployment 71 is owner-supplied and cannot be confirmed through GitHub.
+~~~text
+Understand
+ ↓
+Design
+ ↓
+Implement
+ ↓
+Run tests
+ ↓
+Review diff
+ ↓
+Commit
+ ↓
+Push Git
+ ↓
+clasp push
+ ↓
+Update intended deployment
+ ↓
+Smoke test
+~~~
 
-## 10. No unapproved infrastructure changes
+## 11. Tests
 
-Do not add GCP/Execution API configuration solely for a one-off test. The repository does not establish an Apps Script Execution API project binding.
+Tests live in tests/.
 
-## 11. Definition of done
+Current groups include Customer, Orders, order documents and product reservation, plus:
+- `tests/media-sync.test.js`;
+- `tests/github-git-data.test.js`;
+- `tests/catalog-media-independence.test.js`.
 
-A code change is complete when relevant tests pass, only intended files changed, the diff is reviewed, a PR is reviewed/merged through the normal workflow, and Apps Script is updated only when that change requires it. Update documentation when architecture or operations change.
+The MediaSync tests cover recovery, conflict/trigger safety, missing-folder and truncated-tree behavior, legacy manifest migration and audit hashing. The audit trigger installation/real schedule is not covered by an automated test.
+
+tests/ is excluded from Apps Script upload by .claspignore.
+
+## 12. Git workflow
+
+Use:
+
+~~~text
+git status
+git diff
+git diff --check
+git add only intended files
+git diff --cached
+git commit on a topic branch
+git push origin <topic-branch>
+open Pull Request for review
+~~~
+
+Do not blindly use git add . when unrelated local files may exist.
+
+## 13. Apps Script workflow
+
+Use:
+
+~~~text
+clasp status
+review source diff
+clasp push only after approval
+verify/update intended deployment separately
+controlled smoke test
+~~~
+
+GitHub commit and Apps Script deployment version are separate. The owner reports deployment 71 (`Previa CMS V3 - Hardened Media Sync`), but GitHub cannot verify the live deployment or Media Audit trigger.
+
+## 14. No unapproved infrastructure changes
+
+Do not introduce GCP/Execution API configuration merely to solve a one-off test.
+
+The current CMS is not bound to a GCP project for Execution API use.
+
+## 15. One logical change = one commit
+
+Prefer feat:, fix:, refactor:, docs: and test: prefixes.
+
+## 16. Documentation is part of the project
+
+Architecture, responsibilities and workflows must evolve together with the code.
+
+## 17. Definition of done
+
+A change is complete when relevant tests pass, the diff is reviewed, only intended files changed, GitHub is updated, Apps Script is updated when required, the intended deployment is updated and documentation is updated when architecture changed.
+
+## Dashboard rule
+
+Dashboard is an administrative workspace. It may launch Publish, Archive, Restore and Refresh Images. Business logic remains server-side.
+
+## Stability rule
+
+Refactor only when a defect, duplication, unclear boundary, maintenance problem, security issue or concurrency issue is demonstrated.

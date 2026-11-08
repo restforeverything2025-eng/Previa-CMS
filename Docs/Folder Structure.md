@@ -1,15 +1,15 @@
 # PREVIA CMS Folder Structure
 
-Documentation revision: 2026-11-08  
-Status: Active
+Documentation revision: 2026-11-08
+Status: Production
 
 ## Purpose
 
-Repository responsibility map. Use the Git tree for the exact current file list.
+Current repository responsibility map.
 
 ## Main structure
 
-```text
+~~~text
 Previa-CMS/
 ├── Api/
 ├── Customer/
@@ -50,39 +50,97 @@ Previa-CMS/
 ├── GitHub.js
 ├── ExchangeRate.js
 └── Migration.js
-```
+~~~
 
-## Main directories
+The Git tree is the authoritative exact file list.
 
-### Api/
-HTTP-facing Customer, Favorites, Order and Product endpoints plus centralized Order authentication. `WebApp.js` remains the single `doGet`/`doPost` entry point.
+## Api/
 
-### Customer/ and Favorites/
-Models, repositories, services and API helpers for their respective Sheets-backed data.
+HTTP-facing modules:
+- CustomerEndpoint.js
+- FavoritesEndpoint.js
+- OrderAuthentication.js
+- OrderEndpoint.js
+- ProductEndpoint.js
 
-### Docs/ and tests/
-Architecture, operations and development documentation; Node-based automated tests. Tests are excluded from Apps Script upload by `.claspignore`.
+WebApp.js is the single doGet/doPost entry point.
 
-## Publication modules
+## Customer/
 
-`Publish.js`, `PublishReport.js`, `PublicationJournal.js`, `DataGenerator.js` and `SpreadsheetWriter.js` implement the catalog publication flow. `IncomingValidator.js` and `IncomingPublisher.js` validate and process new product folders.
+CustomerModel, CustomerRepository, CustomerService and CustomerAPI.
 
-## Media modules
+CustomerRepository owns Customers-sheet persistence.
 
-- `Drive.js`: product image inventory and byte reads.
-- `MediaSync.js`: current Drive → GitHub V3 synchronizer, including `media-manifest.json`, audit mode and recovery.
-- `GitHub.js`: GitHub Git Data API and compatible file helpers.
-- `RefreshService.js`: Dashboard refresh wrapper.
-- `ImagePublisher.js`: older per-file publication helpers; not called by the current Dashboard or Publish Boutique pipeline.
+CustomerService owns Customer registry operations and atomic get-or-create.
 
-Published target paths are `images/{sku}/{filename}` and `media-manifest.json`. This repository tree lists source files; those public media paths are generated/published GitHub content.
+## Favorites/
 
-Catalog publication and media synchronization remain independent. See [Publish Pipeline](Publish%20Pipeline.md).
+FavoritesModel, FavoritesRepository, FavoritesService and FavoritesAPI.
 
-## Administration and runtime data
+Favorites are keyed by customerId.
 
-`Dashboard.html`, `DashboardService.js`, `Code.js`, `ArchiveService.js`, `RestoreService.js`, `LookupService.js` and `RefreshService.js` provide administrative UI and actions. The Sheets menu includes a Media Audit trigger setup item; the Dashboard does not.
+## Orders
 
-Runtime Sheets include Products, Config, Customers, Favorites, Orders, OrderItems and PublicationJournal. Drive stores product images, Incoming data and order documents.
+Orders.js handles storage-side order persistence and reservation coordination.
 
-CMS owns persistence and infrastructure; PREVIA Core remains a separate repository for shared business/domain rules.
+OrderSchemaValidator validates schema and payload.
+
+OrderRepositoryAdapter bridges the endpoint and persistence.
+
+OrderDocumentQueue and OrderDocumentService handle asynchronous PDF work.
+
+## Publication
+
+Publish.js, PublishReport.js, PublicationJournal.js, DataGenerator.js and SpreadsheetWriter.js.
+
+## Media
+
+Drive.js, MediaSync.js and ImagePublisher.js.
+
+Current direction:
+
+~~~text
+Google Drive → MediaSync V3 → GitHub images + media-manifest.json
+~~~
+
+`MediaSync.js` owns inventory comparison, audit mode, checkpoints and continuation. `GitHub.js` provides Git Data API operations. The ordinary Refresh Images action runs MediaSync; Publish Boutique does not.
+
+## Product import and validation
+
+Products.js, IncomingValidator.js, IncomingPublisher.js, Normalizer.js, Validation.js, IdGenerator.js and SkuGenerator.js.
+
+## Administration
+
+Dashboard.html, DashboardService.js, ArchiveService.js, RestoreService.js, LookupService.js and RefreshService.js.
+
+Dashboard actions include Publish, Archive, Restore and Refresh Images. The Sheets menu also includes Setup Media Audit Worker; the Dashboard has no audit control.
+
+## Configuration and infrastructure
+
+Config.js, GitHub.js, ExchangeRate.js, Migration.js, Code.js and WebApp.js.
+
+## Tests
+
+tests/ contains Node-based tests, including MediaSync, Git Data API and catalog/media independence suites, and is excluded from Apps Script upload by .claspignore.
+
+## Runtime data
+
+Google Sheets:
+- Products
+- Config
+- Customers
+- Favorites
+- Orders
+- OrderItems
+- PublicationJournal
+
+Google Drive:
+- Products/
+- Incoming/
+- PREVIA/ORDERS/
+
+## Boundary
+
+CMS contains persistence and infrastructure.
+
+PREVIA Core remains a separate repository and owns shared domain/business rules.
